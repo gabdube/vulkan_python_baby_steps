@@ -56,8 +56,7 @@ def find_memory_type(heap_flags, type_flags):
 
 
 # Window setup
-events = {}
-window = Window(events, width=800, height=600)
+window = Window(width=800, height=600)
 width, height = window.dimensions()
 
 #

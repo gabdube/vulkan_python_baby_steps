@@ -13,6 +13,7 @@ Fragment color is set to a static value of `vec4(1.0, 1.0, 1.0, 1.0)` directly i
 from vulkan import vk, helpers as hvk
 from vulkan.debugger import Debugger
 from system.window import Window
+from system import events as e
 
 import platform, time
 from enum import IntFlag
@@ -50,8 +51,7 @@ def find_memory_type(heap_flags, type_flags):
 
 
 # Window setup
-events = {}
-window = Window(events, width=800, height=600)
+window = Window(width=800, height=600)
 width, height = window.dimensions()
 
 #
@@ -100,7 +100,7 @@ render_queue_handle = hvk.get_queue(api, device, render_queue_family.index, 0)
 render_queue = Queue(render_queue_handle, render_queue_family)
 
 # Swapchain Setup
-def create_swapchain():
+def create_swapchain(recreate=False):
     global swapchain, swapchain_image_format, swapchain_image_views, swapchain_images
     global depth_format, depth_stencil, depth_alloc, depth_view
     global width, height
@@ -126,9 +126,9 @@ def create_swapchain():
         raise RuntimeError("Required swapchain image format not supported")
 
     # Swapchain Extent
+    width, height = window.dimensions()
     extent = caps.current_extent
     if extent.width == -1 or extent.height == -1:
-        width, height = window.dimensions()
         extent.width = width
         extent.height = height
 
@@ -151,6 +151,11 @@ def create_swapchain():
     if vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR in IntFlag(caps.supported_transforms):
         transform = vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR
 
+    if recreate:
+        old_swapchain = swapchain
+    else:
+        old_swapchain = 0
+
     # Swapchain creation
     swapchain_image_format = selected_format.format
     swapchain = hvk.create_swapchain(api, device, hvk.swapchain_create_info(
@@ -161,8 +166,19 @@ def create_swapchain():
         min_image_count = min_image_count,
         present_mode = present_mode,
         pre_transform = transform,
-        old_swapchain = 0
+        old_swapchain = old_swapchain
     ))
+
+    if recreate:
+        hvk.destroy_swapchain(api, device, old_swapchain)
+        
+        for view in swapchain_image_views:
+            hvk.destroy_image_view(api, device, view)
+
+        hvk.destroy_image_view(api, device, depth_view)
+        hvk.destroy_image(api, device, depth_stencil)
+        hvk.free_memory(api, device, depth_alloc)
+        
 
     # Fetch swapchain images
     swapchain_images = hvk.swapchain_images(api, device, swapchain)
@@ -221,68 +237,88 @@ create_swapchain()
 # RENDER SETUP
 #
 
-# Renderpass attachments setup
-color = hvk.attachment_description(
-    format = swapchain_image_format,
-    initial_layout = vk.IMAGE_LAYOUT_UNDEFINED,
-    final_layout = vk.IMAGE_LAYOUT_PRESENT_SRC_KHR
-)
+def setup_render_pass(recreate=False):
+    global render_pass
 
-depth = hvk.attachment_description(
-    format = depth_format,
-    initial_layout = vk.IMAGE_LAYOUT_UNDEFINED,
-    final_layout = vk.IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
-)
+    if recreate:
+        hvk.destroy_render_pass(api, device, render_pass)
 
-window_attachments = (color, depth)
-color_ref = vk.AttachmentReference(attachment=0, layout=vk.IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
-depth_ref = vk.AttachmentReference(attachment=1, layout=vk.IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
+    # Renderpass attachments setup
+    color = hvk.attachment_description(
+        format = swapchain_image_format,
+        initial_layout = vk.IMAGE_LAYOUT_UNDEFINED,
+        final_layout = vk.IMAGE_LAYOUT_PRESENT_SRC_KHR
+    )
 
-# Render pass subpasses
-subpass_info = hvk.subpass_description(
-    pipeline_bind_point = vk.PIPELINE_BIND_POINT_GRAPHICS,
-    color_attachments = (color_ref,),
-    depth_stencil_attachment = depth_ref
-)
+    depth = hvk.attachment_description(
+        format = depth_format,
+        initial_layout = vk.IMAGE_LAYOUT_UNDEFINED,
+        final_layout = vk.IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL
+    )
 
-# Renderpass dependencies
-prepare_drawing = hvk.subpass_dependency(
-    src_subpass = vk.SUBPASS_EXTERNAL,
-    dst_subpass = 0,
-    src_stage_mask = vk.PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-    dst_stage_mask = vk.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    src_access_mask = vk.ACCESS_MEMORY_READ_BIT,
-    dst_access_mask = vk.ACCESS_COLOR_ATTACHMENT_READ_BIT | vk.ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-)
+    window_attachments = (color, depth)
+    color_ref = vk.AttachmentReference(attachment=0, layout=vk.IMAGE_LAYOUT_COLOR_ATTACHMENT_OPTIMAL)
+    depth_ref = vk.AttachmentReference(attachment=1, layout=vk.IMAGE_LAYOUT_DEPTH_STENCIL_ATTACHMENT_OPTIMAL)
 
-prepare_present = hvk.subpass_dependency(
-    src_subpass = 0,
-    dst_subpass = vk.SUBPASS_EXTERNAL,
-    src_stage_mask = vk.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
-    dst_stage_mask = vk.PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
-    src_access_mask = vk.ACCESS_COLOR_ATTACHMENT_READ_BIT | vk.ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
-    dst_access_mask = vk.ACCESS_MEMORY_READ_BIT,
-)
+    # Render pass subpasses
+    subpass_info = hvk.subpass_description(
+        pipeline_bind_point = vk.PIPELINE_BIND_POINT_GRAPHICS,
+        color_attachments = (color_ref,),
+        depth_stencil_attachment = depth_ref
+    )
 
-# Render pass creation
-render_pass = hvk.create_render_pass(api, device, hvk.render_pass_create_info(
-    attachments = (color, depth),
-    subpasses = (subpass_info,),
-    dependencies = (prepare_drawing, prepare_present)
-))
+    # Renderpass dependencies
+    prepare_drawing = hvk.subpass_dependency(
+        src_subpass = vk.SUBPASS_EXTERNAL,
+        dst_subpass = 0,
+        src_stage_mask = vk.PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        dst_stage_mask = vk.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        src_access_mask = vk.ACCESS_MEMORY_READ_BIT,
+        dst_access_mask = vk.ACCESS_COLOR_ATTACHMENT_READ_BIT | vk.ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+    )
 
+    prepare_present = hvk.subpass_dependency(
+        src_subpass = 0,
+        dst_subpass = vk.SUBPASS_EXTERNAL,
+        src_stage_mask = vk.PIPELINE_STAGE_COLOR_ATTACHMENT_OUTPUT_BIT,
+        dst_stage_mask = vk.PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT,
+        src_access_mask = vk.ACCESS_COLOR_ATTACHMENT_READ_BIT | vk.ACCESS_COLOR_ATTACHMENT_WRITE_BIT,
+        dst_access_mask = vk.ACCESS_MEMORY_READ_BIT,
+    )
 
-# Framebuffers setup
-framebuffers = []
-for img in swapchain_image_views:
-    framebuffer = hvk.create_framebuffer(api, device, hvk.framebuffer_create_info(
-        render_pass = render_pass,
-        width = width,
-        height = height,
-        attachments = (img, depth_view)
+    # Render pass creation
+    render_pass = hvk.create_render_pass(api, device, hvk.render_pass_create_info(
+        attachments = (color, depth),
+        subpasses = (subpass_info,),
+        dependencies = (prepare_drawing, prepare_present)
     ))
 
-    framebuffers.append(framebuffer)
+
+setup_render_pass()
+
+
+def setup_framebuffers(recreate=False):
+    global framebuffers
+
+    if recreate:
+        for fb in framebuffers:
+            hvk.destroy_framebuffer(api, device, fb)
+
+    # Framebuffers setup
+    framebuffers = []
+    for img in swapchain_image_views:
+        framebuffer = hvk.create_framebuffer(api, device, hvk.framebuffer_create_info(
+            render_pass = render_pass,
+            width = width,
+            height = height,
+            attachments = (img, depth_view)
+        ))
+
+        framebuffers.append(framebuffer)
+
+
+setup_framebuffers()
+
 
 # Create shaders and the stage info or the pipeline
 shader_modules, stage_infos = [], []
@@ -325,35 +361,46 @@ position_attribute = hvk.vertex_input_attribute_description(
 )
 
 # Pipeline creation
-viewport = hvk.viewport(width=width, height=height)
-render_area = hvk.rect_2d(0, 0, width, height)
-pipeline_info = hvk.graphics_pipeline_create_info(
-    stages = stage_infos,
-    vertex_input_state = hvk.pipeline_vertex_input_state_create_info(
-        vertex_binding_descriptions = (position_binding,),
-        vertex_attribute_descriptions = (position_attribute,)
-    ),
-    input_assembly_state = hvk.pipeline_input_assembly_state_create_info(),
-    viewport_state = hvk.pipeline_viewport_state_create_info(
-        viewports=(viewport,),
-        scissors=(render_area,)
-    ),
-    rasterization_state = hvk.pipeline_rasterization_state_create_info(),
-    multisample_state = hvk.pipeline_multisample_state_create_info(),
-    depth_stencil_state = hvk.pipeline_depth_stencil_state_create_info(
-        depth_test_enable = vk.TRUE,
-        depth_write_enable  = vk.TRUE,
-        depth_compare_op = vk.COMPARE_OP_LESS_OR_EQUAL,
-    ),
-    color_blend_state = hvk.pipeline_color_blend_state_create_info(
-        attachments = (hvk.pipeline_color_blend_attachment_state(),)
-    ),
-    layout = layout,
-    render_pass = render_pass
-)
+def setup_pipeline(recreate=False):
+    global pipeline_cache, pipeline
 
-pipeline_cache = hvk.create_pipeline_cache(api, device, hvk.pipeline_cache_create_info())
-pipeline = hvk.create_graphics_pipelines(api, device, (pipeline_info,), pipeline_cache)[0]
+    if recreate:
+        hvk.destroy_pipeline_cache(api, device, pipeline_cache)
+        hvk.destroy_pipeline(api, device, pipeline)
+
+    viewport = hvk.viewport(width=width, height=height)
+    render_area = hvk.rect_2d(0, 0, width, height)
+    pipeline_info = hvk.graphics_pipeline_create_info(
+        stages = stage_infos,
+        vertex_input_state = hvk.pipeline_vertex_input_state_create_info(
+            vertex_binding_descriptions = (position_binding,),
+            vertex_attribute_descriptions = (position_attribute,)
+        ),
+        input_assembly_state = hvk.pipeline_input_assembly_state_create_info(),
+        viewport_state = hvk.pipeline_viewport_state_create_info(
+            viewports=(viewport,),
+            scissors=(render_area,)
+        ),
+        rasterization_state = hvk.pipeline_rasterization_state_create_info(),
+        multisample_state = hvk.pipeline_multisample_state_create_info(),
+        depth_stencil_state = hvk.pipeline_depth_stencil_state_create_info(
+            depth_test_enable = vk.TRUE,
+            depth_write_enable  = vk.TRUE,
+            depth_compare_op = vk.COMPARE_OP_LESS_OR_EQUAL,
+        ),
+        color_blend_state = hvk.pipeline_color_blend_state_create_info(
+            attachments = (hvk.pipeline_color_blend_attachment_state(),)
+        ),
+        layout = layout,
+        render_pass = render_pass
+    )
+
+    pipeline_cache = hvk.create_pipeline_cache(api, device, hvk.pipeline_cache_create_info())
+    pipeline = hvk.create_graphics_pipelines(api, device, (pipeline_info,), pipeline_cache)[0]
+
+
+setup_pipeline()
+
 
 # Store mesh data to into ctypes buffers
 indices = (0, 1, 2)
@@ -444,16 +491,26 @@ submit_info = hvk.submit_info(command_buffers = (cmd_copy_staging_to_device,))
 hvk.queue_submit(api, render_queue.handle, (submit_info,), fence = fence_copy_staging_to_device)
 hvk.wait_for_fences(api, device, (fence_copy_staging_to_device,))
 
-# Render commands setup
-drawing_pool = hvk.create_command_pool(api, device, hvk.command_pool_create_info(
-    queue_family_index = render_queue.family.index,
-    flags = vk.COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
-))
 
-cmd_draw = hvk.allocate_command_buffers(api, device, hvk.command_buffer_allocate_info(
-    command_pool = drawing_pool,
-    command_buffer_count = len(swapchain_images)
-))
+def setup_drawing_commands(recreate=False):
+    global drawing_pool, cmd_draw
+
+    if recreate:
+        hvk.destroy_command_pool(api ,device, drawing_pool)
+
+    # Render commands setup
+    drawing_pool = hvk.create_command_pool(api, device, hvk.command_pool_create_info(
+        queue_family_index = render_queue.family.index,
+        flags = vk.COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
+    ))
+
+    cmd_draw = hvk.allocate_command_buffers(api, device, hvk.command_buffer_allocate_info(
+        command_pool = drawing_pool,
+        command_buffer_count = len(swapchain_images)
+    ))
+
+
+setup_drawing_commands()
 
 # Render commands synchronisation resources
 info = hvk.semaphore_create_info()
@@ -463,33 +520,39 @@ rendering_done = hvk.create_semaphore(api, device, info)
 info = hvk.fence_create_info(flags=vk.FENCE_CREATE_SIGNALED_BIT)
 render_fences = tuple(hvk.create_fence(api, device, info) for _ in range(len(swapchain_images)))
 
-# Render commands recording
-begin_info = hvk.command_buffer_begin_info()
 
-render_pass_begin = hvk.render_pass_begin_info(
-    render_pass = render_pass, framebuffer = 0,
-    render_area = hvk.rect_2d(0, 0, width, height),
-    clear_values = (
-        hvk.clear_value(color=(0.0, 0.0, 0.0, 1.0)),
-        hvk.clear_value(depth=1.0, stencil=0)
+def record_render_commands():
+
+    # Render commands recording
+    begin_info = hvk.command_buffer_begin_info()
+
+    render_pass_begin = hvk.render_pass_begin_info(
+        render_pass = render_pass, framebuffer = 0,
+        render_area = hvk.rect_2d(0, 0, width, height),
+        clear_values = (
+            hvk.clear_value(color=(0.0, 0.0, 0.0, 1.0)),
+            hvk.clear_value(depth=1.0, stencil=0)
+        )
     )
-)
 
-for framebuffer, cmd in zip(framebuffers, cmd_draw):
-    render_pass_begin.framebuffer = framebuffer
+    for framebuffer, cmd in zip(framebuffers, cmd_draw):
+        render_pass_begin.framebuffer = framebuffer
 
-    hvk.begin_command_buffer(api, cmd, begin_info)
-    hvk.begin_render_pass(api, cmd, render_pass_begin, vk.SUBPASS_CONTENTS_INLINE)
+        hvk.begin_command_buffer(api, cmd, begin_info)
+        hvk.begin_render_pass(api, cmd, render_pass_begin, vk.SUBPASS_CONTENTS_INLINE)
 
-    hvk.bind_pipeline(api, cmd, pipeline, vk.PIPELINE_BIND_POINT_GRAPHICS)
+        hvk.bind_pipeline(api, cmd, pipeline, vk.PIPELINE_BIND_POINT_GRAPHICS)
 
-    hvk.bind_index_buffer(api, cmd, mesh_buffer, indices_data_offset, vk.INDEX_TYPE_UINT16)
-    hvk.bind_vertex_buffers(api, cmd, (mesh_buffer,), (positions_data_offset,))
+        hvk.bind_index_buffer(api, cmd, mesh_buffer, indices_data_offset, vk.INDEX_TYPE_UINT16)
+        hvk.bind_vertex_buffers(api, cmd, (mesh_buffer,), (positions_data_offset,))
 
-    hvk.draw_indexed(api, cmd, indices_count)
-    
-    hvk.end_render_pass(api, cmd)
-    hvk.end_command_buffer(api, cmd)
+        hvk.draw_indexed(api, cmd, indices_count)
+        
+        hvk.end_render_pass(api, cmd)
+        hvk.end_command_buffer(api, cmd)
+
+
+record_render_commands()
 
 
 # Render commands submitting
@@ -528,7 +591,19 @@ window.show()
 # Render loop
 while not window.must_exit:
     window.translate_system_events()
+
+    for event, event_data in window.events:
+        if event is e.WindowResized:
+            hvk.device_wait_idle(api, device)
+            create_swapchain(True)
+            setup_render_pass(True)
+            setup_framebuffers(True)
+            setup_pipeline(True)
+            setup_drawing_commands(True)
+            record_render_commands()
+
     render()
+
     time.sleep(1/60)
 
 # Cleanup

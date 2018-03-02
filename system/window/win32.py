@@ -7,6 +7,8 @@
 from ctypes import *
 from ctypes.wintypes import *
 
+from ..import events as e
+
 
 ### BINDINGS ###
 
@@ -161,7 +163,7 @@ class Win32Window(object):
     A global window object.
     """
 
-    def __init__(self, events, **kwargs):
+    def __init__(self, **kwargs):
         __allowed_kwargs = ('width', 'height')
         bad_kwargs_keys = [k for k in kwargs.keys() if k not in __allowed_kwargs]
         if len(bad_kwargs_keys) != 0 and type(self) is Win32Window:
@@ -210,7 +212,7 @@ class Win32Window(object):
         self.__hwnd = hwnd
         self.__win32_hinstance = mod
 
-        self.events = events
+        self.events = e.EventsMap()
         self.cached_window_size = (width, height)
         self.was_maximized = False
         self.window_resized = False
@@ -271,7 +273,7 @@ class Win32Window(object):
             cwidth, cheight = self.cached_window_size
             width, height = self.dimensions(False)
             if width != cwidth or height != cheight:
-                #self.events[events.WindowResized] = events.WindowResizedData(width, height)
+                self.events[e.WindowResized] = e.WindowResizedData(width, height)
                 self.cached_window_size = (width, height)
 
         elif msg == WM_CLOSE:
