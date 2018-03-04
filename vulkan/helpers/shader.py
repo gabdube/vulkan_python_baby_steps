@@ -163,8 +163,6 @@ def write_descriptor_set(**kwargs):
     elif _texel_buffer_views is not None:
         descriptor_count = texel_buffer_view_count
 
-    print(kwargs)
-
     return vk.WriteDescriptorSet(
         type = vk.STRUCTURE_TYPE_WRITE_DESCRIPTOR_SET,
         next = None,

@@ -6,6 +6,7 @@
 import weakref
 from ctypes import *
 from time import perf_counter
+from .. import events as e
 
 
 # Extern libraries
@@ -238,7 +239,7 @@ free.argtypes = (c_void_p,)
 
 class XcbWindow(object):
     
-    def __init__(self, events, **kwargs):
+    def __init__(self, **kwargs):
         __allowed_kwargs = ('width', 'height')
         bad_kwargs_keys = [k for k in kwargs.keys() if k not in __allowed_kwargs]
         if len(bad_kwargs_keys) != 0 and type(self) is Win32Window:
@@ -302,7 +303,7 @@ class XcbWindow(object):
         self.__connection = connection
         self.__position = (y, x)
         self.cached_size = (width, height)
-        self.events = events
+        self.events = e.EventsMap()
         self.must_exit = False
 
         self.resizing = False
@@ -373,7 +374,7 @@ class XcbWindow(object):
             if width != c_width or height != c_height:
                 self.cached_size = (width, height)
                 self.resizing = perf_counter()
-                #self.events[RenderDisable] = None
+                self.events[e.RenderDisable] = None
                 
         elif evt_id in (XCB_CLIENT_MESSAGE, XCB_DESTROY_NOTIFY):
             self.must_exit = True
@@ -382,7 +383,8 @@ class XcbWindow(object):
         if self.resizing:
             c, rc = perf_counter(), self.resizing
             if c-rc > 0.3:
-                #self.events[WindowResized] = WindowResizedData(*self.cached_size)
+                self.events[e.WindowResized] = e.WindowResizedData(*self.cached_size)
+                self.events[e.RenderEnable] = None
                 self.resizing = False
 
     def translate_system_events(self):

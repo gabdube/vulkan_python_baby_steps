@@ -11,9 +11,9 @@ Fragment color is set to the value of the uniform buffer
 Changes are located at the following steps:
  * Setup shader descriptor set
  * Create descriptors resources
- * Setup shader descriptor set
  * Upload color data to memory
  * Update descriptor set with buffer values
+ * Render commands recording
 """
 
 from vulkan import vk, helpers as hvk

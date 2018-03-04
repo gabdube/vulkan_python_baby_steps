@@ -21,9 +21,12 @@ class EventsMap(dict):
             raise KeyError(f"Invalid event type: {key}")
 
 
-Events = Enum("Events", "WindowResized")
+Events = Enum("Events", "WindowResized RenderEnable RenderDisable")
 
 WindowResized = Events.WindowResized
 WindowResizedData = namedtuple('WindowResizedData', 'width height')
 
-events_to_replace = (WindowResized,)
+RenderEnable = Events.RenderEnable
+RenderDisable = Events.RenderDisable
+
+events_to_replace = (WindowResized, RenderEnable, RenderDisable)
