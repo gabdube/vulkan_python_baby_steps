@@ -8,6 +8,7 @@ from vulkan import vk, helpers as hvk
 from vulkan.debugger import Debugger
 from system.window import Window
 from system import events as e
+from utils.mat import Mat4
 
 import platform, time
 from enum import IntFlag
@@ -15,6 +16,9 @@ from collections import namedtuple
 from ctypes import c_ubyte, sizeof, memmove, byref
 from math import radians
 
+# Model values setup
+rotation = 0
+zoom = 2.0
 
 # Typing setup
 Queue = namedtuple("Queue", ("handle", "family"))
@@ -364,15 +368,8 @@ descriptor_set = hvk.allocate_descriptor_sets(api, device, hvk.descriptor_set_al
 ))[0]
 
 # Create descriptor set resources
-from mat import Mat4
-
-ubo_data = (Mat4*3)()
-ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)
-ubo_data[1] = Mat4.from_translation(0.0, 0.0, -2.0)
-ubo_data[2] = Mat4()
-
-
-ubo_data_size = sizeof(ubo_data)
+ubo_data_type = Mat4*3
+ubo_data_size = sizeof(ubo_data_type)
 
 ubo_buffer = hvk.create_buffer(api, device, hvk.buffer_create_info(
     size = ubo_data_size,
@@ -389,13 +386,25 @@ ubo_mem = hvk.allocate_memory(api, device, hvk.memory_allocate_info(
 
 hvk.bind_buffer_memory(api, device, ubo_buffer, ubo_mem, 0)
 
-# Upload color data to memory
-data_ptr = hvk.map_memory(api, device, ubo_mem, 0, ubo_data_size).value
+# Update uniform data
+def update_ubo():
+    data_ptr = hvk.map_memory(api, device, ubo_mem, 0, ubo_data_size)
 
-memmove(data_ptr, byref(ubo_data), ubo_data_size)
+    ubo_data = ubo_data_type.from_address(data_ptr.value)
+    
+    # Perspective
+    width, height = window.dimensions()
+    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)  
+    
+    # View
+    ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)    
 
-hvk.unmap_memory(api, device, ubo_mem)
+    # Model
+    ubo_data[2] = Mat4.from_rotation(rotation, (0, 1.0, 0.0))
 
+    hvk.unmap_memory(api, device, ubo_mem)
+
+update_ubo()
 
 # Update descriptor set with buffer values
 ubo_buffer_info = vk.DescriptorBufferInfo(
@@ -468,7 +477,7 @@ def setup_pipeline(recreate=False):
         depth_stencil_state = hvk.pipeline_depth_stencil_state_create_info(
             depth_test_enable = vk.TRUE,
             depth_write_enable  = vk.TRUE,
-            depth_compare_op = vk.COMPARE_OP_LESS_OR_EQUAL,
+            depth_compare_op = vk.COMPARE_OP_LESS
         ),
         color_blend_state = hvk.pipeline_color_blend_state_create_info(
             attachments = (hvk.pipeline_color_blend_attachment_state(),)
@@ -699,6 +708,9 @@ while not window.must_exit:
             setup_pipeline(True)
             setup_drawing_commands(True)
             record_render_commands()
+
+            update_ubo()
+
         elif event is e.RenderEnable:
             render_ok = True
         elif event is e.RenderDisable:
@@ -706,6 +718,9 @@ while not window.must_exit:
 
     if render_ok:
         render()
+
+    rotation += 0.01
+    update_ubo()
 
     time.sleep(1/60)
 

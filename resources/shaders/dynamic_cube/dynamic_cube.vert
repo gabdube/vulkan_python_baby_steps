@@ -13,7 +13,10 @@ layout (binding = 0) uniform UBO
     mat4 model;
 } ubo;
 
+layout (location = 0) out vec4 outNorm;
+
 void main() 
 {
+    outNorm = vec4(inPos.xyz, 1.0);
 	gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPos.xyz, 1.0);
 }
