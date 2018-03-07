@@ -194,7 +194,7 @@ def pipeline_depth_stencil_state_create_info(**kwargs):
         front = kwargs.get('front', stencil_op_state()), 
         back = kwargs.get('back', stencil_op_state()), 
         min_depth_bounds = kwargs.get('min_depth_bounds', 0.0), 
-        max_depth_bounds = kwargs.get('max_depth_bounds', 0.0), 
+        max_depth_bounds = kwargs.get('max_depth_bounds', 1.0), 
     )
 
 

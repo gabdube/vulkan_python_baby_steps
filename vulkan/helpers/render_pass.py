@@ -63,7 +63,7 @@ def subpass_description(**kwargs):
     resolve, resolve_ptr, _ = sequence_to_array(kwargs.get('resolve_attachments'), vk.AttachmentReference)
     preserve, preserve_ptr, preserve_count = sequence_to_array(kwargs.get('preserve_attachments'), c_uint32)
 
-    depth_stencil, depth_stencil_ptr = kwargs.get('depth_stencil_attachments'), None
+    depth_stencil, depth_stencil_ptr = kwargs.get('depth_stencil_attachment'), None
     if depth_stencil is not None:
         depth_stencil = array(vk.AttachmentReference, 1, (depth_stencil,))
         depth_stencil_ptr = array_pointer(depth_stencil)

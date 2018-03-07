@@ -17,7 +17,7 @@ from ctypes import c_ubyte, sizeof, memmove, byref
 from math import radians
 
 # Model values setup
-rotation = 0
+rotation = 90
 zoom = 2.0
 
 # Typing setup
@@ -629,7 +629,7 @@ def record_render_commands():
 
     # Render commands recording
     begin_info = hvk.command_buffer_begin_info()
-
+ 
     render_pass_begin = hvk.render_pass_begin_info(
         render_pass = render_pass, framebuffer = 0,
         render_area = hvk.rect_2d(0, 0, width, height),
