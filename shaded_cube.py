@@ -9,16 +9,20 @@ from vulkan.debugger import Debugger
 from system.window import Window
 from system import events as e
 from utils.mat import Mat4
+from utils.vec import Vec3
 
 import platform, time
 from enum import IntFlag
 from collections import namedtuple
-from ctypes import c_ubyte, sizeof, memmove, byref
+from ctypes import c_ubyte, c_float, sizeof, memmove, byref, Structure
 from math import radians
 
 # Model values setup
-rotation = 90
+rotation = 0
 zoom = 2.0
+
+reverse_light_direction = (0.5, -0.7, 1.0)
+light_color = (1.0, 0.5, 0.0, 1.0)
 
 # Typing setup
 Queue = namedtuple("Queue", ("handle", "family"))
@@ -324,8 +328,8 @@ setup_framebuffers()
 # Create shaders and the stage info or the pipeline
 shader_modules, stage_infos = [], []
 shader_sources = {
-    vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/dynamic_cube/dynamic_cube.vert.spv',
-    vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/dynamic_cube/dynamic_cube.frag.spv'
+    vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/shaded_cube/shaded_cube.vert.spv',
+    vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/shaded_cube/shaded_cube.frag.spv'
 }
 for stage, src in shader_sources.items():
     with open(src, 'rb') as f:
@@ -348,13 +352,20 @@ ubo_binding = hvk.descriptor_set_layout_binding(
     stage_flags = vk.SHADER_STAGE_VERTEX_BIT
 )
 
-info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding,))
+light_binding = hvk.descriptor_set_layout_binding(
+    binding = 1,
+    descriptor_type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+    descriptor_count = 1,
+    stage_flags = vk.SHADER_STAGE_FRAGMENT_BIT
+)
+
+info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding, light_binding))
 descriptor_set_layout = hvk.create_descriptor_set_layout(api, device, info)
 
 # Create descriptors resources
 pool_size = vk.DescriptorPoolSize(
     type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-    descriptor_count = 1
+    descriptor_count = 2
 )
 
 descriptor_pool = hvk.create_descriptor_pool(api, device, hvk.descriptor_pool_create_info(
@@ -369,10 +380,13 @@ descriptor_set = hvk.allocate_descriptor_sets(api, device, hvk.descriptor_set_al
 
 # Create descriptor set resources
 ubo_data_type = Mat4*3
-ubo_data_size = sizeof(ubo_data_type)
+light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*3), ('color', c_float*4))})
+uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (('ubo', ubo_data_type), ('light', light_data_type))})
+uniforms_data_size = sizeof(uniforms_data_type)
+
 
 ubo_buffer = hvk.create_buffer(api, device, hvk.buffer_create_info(
-    size = ubo_data_size,
+    size = uniforms_data_size,
     usage = vk.BUFFER_USAGE_UNIFORM_BUFFER_BIT
 ))
 
@@ -388,10 +402,11 @@ hvk.bind_buffer_memory(api, device, ubo_buffer, ubo_mem, 0)
 
 # Update uniform data
 def update_ubo():
-    data_ptr = hvk.map_memory(api, device, ubo_mem, 0, ubo_data_size)
+    data_ptr = hvk.map_memory(api, device, ubo_mem, 0, uniforms_data_size)
 
-    ubo_data = ubo_data_type.from_address(data_ptr.value)
-    
+    uniforms = uniforms_data_type.from_address(data_ptr.value)
+    ubo_data, light = uniforms.ubo, uniforms.light
+
     # Perspective
     width, height = window.dimensions()
     ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)  
@@ -400,7 +415,11 @@ def update_ubo():
     ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)    
 
     # Model
-    ubo_data[2] = Mat4.from_rotation(rotation, (0, 1.0, 0.0))
+    ubo_data[2] = Mat4.from_rotation(rotation, (0.0, -1.0, 0.5))
+
+    # Light stuff
+    light.color[::] = light_color
+    light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
 
     hvk.unmap_memory(api, device, ubo_mem)
 
@@ -410,16 +429,29 @@ update_ubo()
 ubo_buffer_info = vk.DescriptorBufferInfo(
     buffer = ubo_buffer,
     offset = 0,
-    range = vk.WHOLE_SIZE
+    range = sizeof(ubo_data_type)
 )
 
-write_set = hvk.write_descriptor_set(
+light_buffer_info = vk.DescriptorBufferInfo(
+    buffer = ubo_buffer,
+    offset = sizeof(ubo_data_type),
+    range = sizeof(light_data_type)
+)
+
+write_set_ubo = hvk.write_descriptor_set(
     dst_set = descriptor_set,
     dst_binding = 0,
     descriptor_type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
     buffer_info = (ubo_buffer_info,)
 )
-hvk.update_descriptor_sets(api, device, (write_set,), ())
+
+write_set_light = hvk.write_descriptor_set(
+    dst_set = descriptor_set,
+    dst_binding = 1,
+    descriptor_type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+    buffer_info = (light_buffer_info,)
+)
+hvk.update_descriptor_sets(api, device, (write_set_ubo, write_set_light), ())
 
 # Pipeline layout setup
 layout = hvk.create_pipeline_layout(api, device, hvk.pipeline_layout_create_info(
@@ -719,10 +751,10 @@ while not window.must_exit:
     if render_ok:
         render()
 
-    rotation += 0.01
+    rotation += 0.005
     update_ubo()
 
-    time.sleep(1/60)
+    time.sleep(1/120)
 
 
 # Cleanup
