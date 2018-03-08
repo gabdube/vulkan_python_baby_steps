@@ -99,3 +99,39 @@ def create_image(api, device, info):
 
 def destroy_image(api, device, image):
     api.DestroyImage(device, image, None)
+
+
+def sampler_create_info(**kwargs):
+    required_args = ('mag_filter', 'min_filter')
+    check_ctypes_members(vk.SamplerCreateInfo, required_args, kwargs.keys())
+    return vk.SamplerCreateInfo(
+        type = vk.STRUCTURE_TYPE_SAMPLER_CREATE_INFO,
+        next = None,
+        flags = 0,
+        mag_filter = kwargs['mag_filter'],
+        min_filter = kwargs['min_filter'],
+        mipmap_mode = kwargs.get('mipmap_mode', vk.SAMPLER_MIPMAP_MODE_LINEAR),
+        address_mode_V = kwargs.get('address_mode_V', vk.SAMPLER_ADDRESS_MODE_REPEAT),
+        address_mode_U = kwargs.get('address_mode_U', vk.SAMPLER_ADDRESS_MODE_REPEAT),
+        address_mode_W = kwargs.get('address_mode_W', vk.SAMPLER_ADDRESS_MODE_REPEAT),
+        mip_lod_bias = kwargs.get('mip_lod_bias', 0.0),
+        anisotropy_enable = kwargs.get('anisotropy_enable', vk.FALSE),
+        max_anisotropy = kwargs.get('max_anisotropy', 1.0),
+        compare_enable = kwargs.get('compare_enable', vk.FALSE),
+        compare_op = kwargs.get('compare_op', vk.COMPARE_OP_NEVER),
+        min_lod = kwargs.get('min_lod', 0.0),
+        max_lod = kwargs.get('max_lod', 0.0),
+        border_color = kwargs.get('border_color', vk.BORDER_COLOR_FLOAT_TRANSPARENT_BLACK),
+        unnormalized_coordinates = kwargs.get('unnormalized_coordinates', vk.FALSE)
+    )
+
+def create_sampler(api, device, info):
+    sampler = vk.Sampler(0)
+    result = api.CreateSampler(device, byref(info), None, byref(sampler))
+    if result != vk.SUCCESS:
+        raise RuntimeError("Failed to create a sampler")
+
+    return sampler
+
+def destroy_sampler(api, device, sampler):
+    api.DestroySampler(device, sampler, None)

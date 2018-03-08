@@ -8,8 +8,7 @@ from vulkan import vk, helpers as hvk
 from vulkan.debugger import Debugger
 from system.window import Window
 from system import events as e
-from utils.mat import Mat4
-from utils.vec import Vec3
+from utils import Mat4, Vec3, KtxTexture
 
 import platform, time
 from enum import IntFlag
@@ -22,7 +21,6 @@ rotation = 0
 zoom = 2.0
 
 reverse_light_direction = (0.5, -0.7, 1.0)
-light_color = (1.0, 0.5, 0.0, 1.0)
 
 # Typing setup
 Queue = namedtuple("Queue", ("handle", "family"))
@@ -95,8 +93,11 @@ render_queue_create_info = hvk.queue_create_info(
 surface = hvk.create_surface(api, instance, window)
 
 # Device creation
+features = vk.PhysicalDeviceFeatures(
+    texture_compression_BC = vk.TRUE    # Enable BC compressed texture
+)
 extensions = ("VK_KHR_swapchain",)
-device = hvk.create_device(api, physical_device, extensions, (render_queue_create_info,))
+device = hvk.create_device(api, physical_device, extensions, (render_queue_create_info,), features)
 
 # Get queue handles
 render_queue_handle = hvk.get_queue(api, device, render_queue_family.index, 0)
@@ -236,6 +237,7 @@ def create_swapchain(recreate=False):
 
 create_swapchain()
 
+
 #
 # ASSETS LOADING
 #
@@ -243,7 +245,7 @@ create_swapchain()
 # Read the mesh data from the gltf resource file
 import json
 
-with open('resources/Box.gltf') as f:
+with open('resources/BoxTextured.gltf') as f:
     gltf_data = json.load(f) 
 
 binary_data_info = gltf_data['buffers'][0]
@@ -266,10 +268,14 @@ normals_view = views[normals['bufferView']]
 positions = accessors[box['attributes']['POSITION']]
 positions_view = views[positions['bufferView']]
 
+uvs = accessors[box['attributes']['TEXCOORD_0']]
+uvs_view = views[uvs['bufferView']]
+
 indices_count = indices['count']
 indices_data_offset = indices['byteOffset'] + indices_view['byteOffset']
 normals_data_offset = normals['byteOffset'] + normals_view['byteOffset']
 positions_data_offset = positions['byteOffset'] + positions_view['byteOffset']
+uvs_data_offset = uvs['byteOffset'] + uvs_view['byteOffset']
 
 
 # Create staging resources
@@ -290,9 +296,7 @@ hvk.bind_buffer_memory(api, device, staging_mesh_buffer, staging_memory, 0)
 
 # Upload mesh to staging data
 data_ptr = hvk.map_memory(api, device, staging_memory, 0, staging_req.size).value
-
 memmove(data_ptr, byref(binary_data), binary_data_size)
-
 hvk.unmap_memory(api, device, staging_memory)
 
 # Create mesh resources
@@ -342,11 +346,52 @@ submit_info = hvk.submit_info(command_buffers = (cmd_copy_staging_to_device,))
 hvk.queue_submit(api, render_queue.handle, (submit_info,), fence = fence_copy_staging_to_device)
 hvk.wait_for_fences(api, device, (fence_copy_staging_to_device,))
 
+
+# Load texture into memory
+image_uri = gltf_data['images'][0]['uri']
+texture = KtxTexture.load('resources/'+image_uri)
+
+# Create texture image
+texture_img_layout = vk.IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+texture_img = hvk.create_image(api, device, hvk.image_create_info(
+    format = texture.format,
+    mip_levels = len(texture.mipmaps),
+    extent = vk.Extent3D(texture.width, texture.height, texture.depth),
+    usage = vk.IMAGE_USAGE_TRANSFER_DST_BIT | vk.IMAGE_USAGE_SAMPLED_BIT
+))
+
+# Allocate texture memory
+image_memreq = hvk.image_memory_requirements(api, device, texture_img)
+mt_index = find_memory_type(vk.MEMORY_HEAP_DEVICE_LOCAL_BIT, vk.MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+
+texture_size = image_memreq.size * 2
+texture_alloc = hvk.allocate_memory(api, device, hvk.memory_allocate_info(
+    allocation_size = texture_size,
+    memory_type_index = mt_index,
+))
+
+hvk.bind_image_memory(api, device, texture_img, texture_alloc)
+
+# Upload texture data to memory
+
+# Create texture view & sampler
+texture_img_view = hvk.create_image_view(api, device, hvk.image_view_create_info(
+    image = texture_img,
+    format = texture.format,
+    subresource_range = hvk.image_subresource_range(level_count=len(texture.mipmaps))
+))
+
+sampler = hvk.create_sampler(api, device, hvk.sampler_create_info(
+    mag_filter = vk.FILTER_LINEAR,
+    min_filter = vk.FILTER_LINEAR
+))
+
+
 # Create shaders and the stage info or the pipeline
 shader_modules, stage_infos = [], []
 shader_sources = {
-    vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/shaded_cube/shaded_cube.vert.spv',
-    vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/shaded_cube/shaded_cube.frag.spv'
+    vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/textured_cube/textured_cube.vert.spv',
+    vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/textured_cube/textured_cube.frag.spv'
 }
 for stage, src in shader_sources.items():
     with open(src, 'rb') as f:
@@ -376,18 +421,30 @@ light_binding = hvk.descriptor_set_layout_binding(
     stage_flags = vk.SHADER_STAGE_FRAGMENT_BIT
 )
 
-info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding, light_binding))
+sampler_binding = hvk.descriptor_set_layout_binding(
+    binding = 2,
+    descriptor_type = vk.DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    descriptor_count = 1,
+    stage_flags = vk.SHADER_STAGE_FRAGMENT_BIT
+)
+
+info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding, light_binding, sampler_binding))
 descriptor_set_layout = hvk.create_descriptor_set_layout(api, device, info)
 
 # Create descriptors resources
-pool_size = vk.DescriptorPoolSize(
+pool_size_uniforms = vk.DescriptorPoolSize(
     type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
     descriptor_count = 2
 )
 
+pool_size_samplers = vk.DescriptorPoolSize(
+    type = vk.DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    descriptor_count = 1
+)
+
 descriptor_pool = hvk.create_descriptor_pool(api, device, hvk.descriptor_pool_create_info(
     max_sets = 1,
-    pool_sizes = (pool_size,)
+    pool_sizes = (pool_size_uniforms, pool_size_samplers)
 ))
 
 descriptor_set = hvk.allocate_descriptor_sets(api, device, hvk.descriptor_set_allocate_info(
@@ -395,12 +452,11 @@ descriptor_set = hvk.allocate_descriptor_sets(api, device, hvk.descriptor_set_al
     set_layouts = (descriptor_set_layout,)
 ))[0]
 
-# Create descriptor set resources
+# Create descriptor set resources for the uniforms values
 ubo_data_type = Mat4*3
-light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*3), ('color', c_float*4))})
+light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*3),)})
 uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (('ubo', ubo_data_type), ('light', light_data_type))})
 uniforms_data_size = sizeof(uniforms_data_type)
-
 
 ubo_buffer = hvk.create_buffer(api, device, hvk.buffer_create_info(
     size = uniforms_data_size,
@@ -435,7 +491,6 @@ def update_ubo():
     ubo_data[2] = Mat4.from_rotation(rotation, (0.0, -1.0, 0.5))
 
     # Light stuff
-    light.color[::] = light_color
     light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
 
     hvk.unmap_memory(api, device, ubo_mem)
@@ -455,6 +510,12 @@ light_buffer_info = vk.DescriptorBufferInfo(
     range = sizeof(light_data_type)
 )
 
+image_info = vk.DescriptorImageInfo(
+    sampler = sampler,
+    image_view = texture_img_view,
+    image_layout = texture_img_layout
+)
+
 write_set_ubo = hvk.write_descriptor_set(
     dst_set = descriptor_set,
     dst_binding = 0,
@@ -468,11 +529,62 @@ write_set_light = hvk.write_descriptor_set(
     descriptor_type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
     buffer_info = (light_buffer_info,)
 )
-hvk.update_descriptor_sets(api, device, (write_set_ubo, write_set_light), ())
+
+write_set_texture = hvk.write_descriptor_set(
+    dst_set = descriptor_set,
+    dst_binding = 2,
+    descriptor_type = vk.DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+    image_info = (image_info,)
+)
+
+hvk.update_descriptor_sets(api, device, (write_set_ubo, write_set_light, write_set_texture), ())
+
 
 #
 # RENDER SETUP
 #
+
+# Pipeline layout setup
+layout = hvk.create_pipeline_layout(api, device, hvk.pipeline_layout_create_info(
+    set_layouts=(descriptor_set_layout,)
+))
+
+# Setup shader vertex input state
+position_binding = hvk.vertex_input_binding_description(
+    binding = 0,
+    stride = hvk.utils.format_size(vk.FORMAT_R32G32B32_SFLOAT)
+)
+
+normals_binding = hvk.vertex_input_binding_description(
+    binding = 1,
+    stride = hvk.utils.format_size(vk.FORMAT_R32G32B32_SFLOAT)
+)
+
+uv_binding = hvk.vertex_input_binding_description(
+    binding = 2,
+    stride = hvk.utils.format_size(vk.FORMAT_R32G32_SFLOAT)
+)
+
+position_attribute = hvk.vertex_input_attribute_description(
+    location = 0,
+    binding = 0,
+    format = vk.FORMAT_R32G32B32_SFLOAT,
+    offset = 0
+)
+
+normals_attribute = hvk.vertex_input_attribute_description(
+    location = 1,
+    binding = 1,
+    format = vk.FORMAT_R32G32B32_SFLOAT,
+    offset = 0
+)
+
+uv_attribute = hvk.vertex_input_attribute_description(
+    location = 2,
+    binding = 2,
+    format = vk.FORMAT_R32G32_SFLOAT,
+    offset = 0
+)
 
 # Render pass creation
 def setup_render_pass(recreate=False):
@@ -557,36 +669,6 @@ def setup_framebuffers(recreate=False):
 
 setup_framebuffers()
 
-# Pipeline layout setup
-layout = hvk.create_pipeline_layout(api, device, hvk.pipeline_layout_create_info(
-    set_layouts=(descriptor_set_layout,)
-))
-
-# Setup shader vertex input state
-position_binding = hvk.vertex_input_binding_description(
-    binding = 0,
-    stride = hvk.utils.format_size(vk.FORMAT_R32G32B32_SFLOAT)
-)
-
-normals_binding = hvk.vertex_input_binding_description(
-    binding = 1,
-    stride = hvk.utils.format_size(vk.FORMAT_R32G32B32_SFLOAT)
-)
-
-position_attribute = hvk.vertex_input_attribute_description(
-    location = 0,
-    binding = 0,
-    format = vk.FORMAT_R32G32B32_SFLOAT,
-    offset = 0
-)
-
-normals_attribute = hvk.vertex_input_attribute_description(
-    location = 1,
-    binding = 1,
-    format = vk.FORMAT_R32G32B32_SFLOAT,
-    offset = 0
-)
-
 # Pipeline creation
 def setup_pipeline(recreate=False):
     global pipeline_cache, pipeline
@@ -600,8 +682,8 @@ def setup_pipeline(recreate=False):
     pipeline_info = hvk.graphics_pipeline_create_info(
         stages = stage_infos,
         vertex_input_state = hvk.pipeline_vertex_input_state_create_info(
-            vertex_binding_descriptions = (position_binding, normals_binding),
-            vertex_attribute_descriptions = (position_attribute, normals_attribute)
+            vertex_binding_descriptions = (position_binding, normals_binding, uv_binding),
+            vertex_attribute_descriptions = (position_attribute, normals_attribute, uv_attribute)
         ),
         input_assembly_state = hvk.pipeline_input_assembly_state_create_info(),
         viewport_state = hvk.pipeline_viewport_state_create_info(
@@ -628,13 +710,14 @@ def setup_pipeline(recreate=False):
 
 setup_pipeline()
 
+
+# Render commands setup
 def setup_drawing_commands(recreate=False):
     global drawing_pool, cmd_draw
 
     if recreate:
         hvk.destroy_command_pool(api ,device, drawing_pool)
-
-    # Render commands setup
+    
     drawing_pool = hvk.create_command_pool(api, device, hvk.command_pool_create_info(
         queue_family_index = render_queue.family.index,
         flags = vk.COMMAND_POOL_CREATE_RESET_COMMAND_BUFFER_BIT
@@ -682,7 +765,7 @@ def record_render_commands():
         hvk.bind_descriptor_sets(api, cmd, vk.PIPELINE_BIND_POINT_GRAPHICS, layout, (descriptor_set,))
 
         hvk.bind_index_buffer(api, cmd, mesh_buffer, indices_data_offset, vk.INDEX_TYPE_UINT16)
-        hvk.bind_vertex_buffers(api, cmd, (mesh_buffer, mesh_buffer), (positions_data_offset, normals_data_offset))
+        hvk.bind_vertex_buffers(api, cmd, (mesh_buffer, mesh_buffer, mesh_buffer), (positions_data_offset, normals_data_offset, uvs_data_offset))
 
         hvk.draw_indexed(api, cmd, indices_count)
         
@@ -771,6 +854,11 @@ hvk.destroy_command_pool(api, device, drawing_pool)
 
 hvk.destroy_buffer(api, device, mesh_buffer)
 hvk.free_memory(api, device, mesh_memory)
+
+hvk.destroy_sampler(api, device, sampler)
+hvk.destroy_image(api, device, texture_img)
+hvk.destroy_image_view(api, device, texture_img_view)
+hvk.free_memory(api, device, texture_alloc)
 
 hvk.destroy_pipeline(api, device, pipeline)
 hvk.destroy_pipeline_cache(api, device, pipeline_cache)

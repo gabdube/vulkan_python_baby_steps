@@ -67,9 +67,26 @@ def format_size(format):
         return sizeof(c_float) * 3
     elif format == vk.FORMAT_R32G32B32A32_SFLOAT:
         return sizeof(c_float) * 4
+    elif format == vk.FORMAT_R32G32_SFLOAT:
+        return sizeof(c_float) * 2
     else:
         raise ValueError("Format not supported")
 
 
 def copy_bytes(dst_ptr, dst_offset, src_data):
     memmove(dst_ptr.value + dst_offset, src_data, len(src_data))
+
+
+def bytes_to_cstruct(bytes_array, struct_view):
+    """
+    Cast an array of python bytes into a ctypes Structure.
+    The bytes_array length must match the size of struct_view.
+
+    :param bytes_array: The array of bytes to cast
+    :param struct_view: The ctypes Structure type
+    :return: An instanced Structure type
+    """
+    array_len = sizeof(struct_view)
+    c_array = (c_ubyte * array_len)(*bytes_array[0:array_len])
+    c_struct = cast(c_array, POINTER(struct_view))
+    return c_struct[0]

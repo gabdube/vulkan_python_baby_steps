@@ -45,7 +45,8 @@
                 {
                     "attributes": {
                         "NORMAL": 1,
-                        "POSITION": 2
+                        "POSITION": 2,
+                        "TEXCOORD_0": 3
                     },
                     "indices": 0,
                     "mode": 4,
@@ -102,26 +103,57 @@
                 -0.5
             ],
             "type": "VEC3"
+        },
+        {
+            "bufferView": 2,
+            "byteOffset": 0,
+            "componentType": 5126,
+            "count": 24,
+            "max": [
+                6.0,
+                1.0
+            ],
+            "min": [
+                0.0,
+                0.0
+            ],
+            "type": "VEC2"
         }
     ],
     "materials": [
         {
             "pbrMetallicRoughness": {
-                "baseColorFactor": [
-                    0.800000011920929,
-                    0.0,
-                    0.0,
-                    1.0
-                ],
+                "baseColorTexture": {
+                    "index": 0
+                },
                 "metallicFactor": 0.0
             },
-            "name": "Red"
+            "name": "Texture"
+        }
+    ],
+    "textures": [
+        {
+            "sampler": 0,
+            "source": 0
+        }
+    ],
+    "images": [
+        {
+            "uri": "textures/CesiumLogoFlat.ktx"
+        }
+    ],
+    "samplers": [
+        {
+            "magFilter": 9729,
+            "minFilter": 9986,
+            "wrapS": 10497,
+            "wrapT": 10497
         }
     ],
     "bufferViews": [
         {
             "buffer": 0,
-            "byteOffset": 576,
+            "byteOffset": 768,
             "byteLength": 72,
             "target": 34963
         },
@@ -131,12 +163,19 @@
             "byteLength": 576,
             "byteStride": 12,
             "target": 34962
+        },
+        {
+            "buffer": 0,
+            "byteOffset": 576,
+            "byteLength": 192,
+            "byteStride": 8,
+            "target": 34962
         }
     ],
     "buffers": [
         {
-            "byteLength": 648,
-            "uri": "bin/Box0.bin"
+            "byteLength": 840,
+            "uri": "bin/BoxTextured0.bin"
         }
     ]
 }

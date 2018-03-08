@@ -1,6 +1,6 @@
 from .. import vk
 from .utils import array_pointer, array, check_ctypes_members, sequence_to_array
-from ctypes import c_uint, c_uint32, c_float, c_char_p, byref, c_int
+from ctypes import c_uint, c_uint32, c_float, c_char_p, byref, c_int, pointer
 from collections import namedtuple
 
 
@@ -108,7 +108,7 @@ def load_functions(api, device):
         setattr(api, name, function)
 
 
-def create_device(api, physical_device, extensions, queue_create_infos):
+def create_device(api, physical_device, extensions, queue_create_infos, features=None):
     """ 
     Create a vulkan device object with the associated informations 
     
@@ -123,12 +123,15 @@ def create_device(api, physical_device, extensions, queue_create_infos):
     queue_create_infos_array = array(vk.DeviceQueueCreateInfo, len(queue_create_infos), queue_create_infos)
     extensions_array = array(c_char_p, len(extensions), (e.encode('utf8') for e in extensions))
 
+    if features is not None:
+        features = pointer(features)
+
     device_config = vk.DeviceCreateInfo(
         type=vk.STRUCTURE_TYPE_DEVICE_CREATE_INFO, next=None, flags=0,
         queue_create_info_count=len(queue_create_infos), queue_create_infos=array_pointer(queue_create_infos_array),
         enabled_layer_count=0, enabled_layer_names=None,
         enabled_extension_count=len(extensions), enabled_extension_names=array_pointer(extensions_array),
-        enabled_features=None
+        enabled_features = features
     )
 
     result = api.CreateDevice(physical_device, device_config, None, byref(device))
