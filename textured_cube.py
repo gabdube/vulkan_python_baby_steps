@@ -374,6 +374,7 @@ hvk.bind_image_memory(api, device, texture_img, texture_alloc)
 
 # Upload texture data to memory
 
+
 # Create texture view & sampler
 texture_img_view = hvk.create_image_view(api, device, hvk.image_view_create_info(
     image = texture_img,
