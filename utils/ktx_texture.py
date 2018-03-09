@@ -2,9 +2,8 @@
 """
 Texture class. Load texture object in the application and onto the GPU.
 Currently, only a single type of texture can be loaded: DTX3(BC2) encoded textures using the KTX format.
-
-author: Gabriel Dube
 """
+
 from vulkan import vk, helpers as hvk
 from ctypes import Structure, c_ubyte, c_uint32, sizeof, memmove
 from collections import namedtuple

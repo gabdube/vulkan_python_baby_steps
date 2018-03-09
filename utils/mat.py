@@ -3,6 +3,7 @@ from itertools import chain
 from math import tan, sin, cos, sqrt
 from sys import float_info
 
+buffer_type = c_float*16
 
 class Mat4(Structure):
     
@@ -17,7 +18,7 @@ class Mat4(Structure):
             [0.0, 0.0, 0.0, 1.0],
         ]
 
-        self.data[::] = (c_float*16)(*chain(*staging))
+        self.data[::] = buffer_type(*chain(*staging))
 
     @classmethod
     def perspective(cls, fovy, aspect, near, far):
@@ -33,7 +34,7 @@ class Mat4(Structure):
             [0.0, 0.0, (far * near * 2) * nf, 0.0]
         ]
 
-        obj.data[::] = (c_float*16)(*chain(*staging))
+        obj.data[::] = buffer_type(*chain(*staging))
 
         return obj
 
@@ -48,7 +49,7 @@ class Mat4(Structure):
             [x, y, z, 1.0]
         ]
 
-        obj.data[::] = (c_float*16)(*chain(*staging))
+        obj.data[::] = buffer_type(*chain(*staging))
 
         return obj
 
@@ -88,6 +89,6 @@ class Mat4(Structure):
         r4[3] = 1.0
 
         staging = [r1, r2, r3, r4]
-        obj.data[::] = (c_float*16)(*chain(*staging))
+        obj.data[::] = buffer_type(*chain(*staging))
 
         return obj

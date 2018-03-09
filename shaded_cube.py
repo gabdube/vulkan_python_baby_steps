@@ -82,9 +82,8 @@ image_ready = None
 rendering_done = None
 render_fences = None
 
-#Uniforms variables setup
-rotation = 0
-zoom = 2.0
+# Uniforms variables setup
+rotation, zoom = 0, 2.0
 
 reverse_light_direction = (0.5, -0.7, 1.0)
 light_color = (1.0, 0.5, 0.0, 1.0)
@@ -117,8 +116,6 @@ def find_memory_type(heap_flags, type_flags):
 
     return type_index
 
-
-# Window setup
 def create_window():
     global window
     window = Window(width=800, height=600)
@@ -185,7 +182,7 @@ def get_queues():
     render_queue = Queue(render_queue_handle, render_queue_family)
 
 
-def create_swapchain():
+def create_swapchain(recreate=False):
     global swapchain_image_format, swapchain
 
     # Swapchain Setup
@@ -236,6 +233,7 @@ def create_swapchain():
         transform = vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR
 
     # Swapchain creation
+    old_swapchain = swapchain
     swapchain_image_format = selected_format.format
     swapchain = hvk.create_swapchain(api, device, hvk.swapchain_create_info(
         surface = surface,
@@ -248,9 +246,16 @@ def create_swapchain():
         old_swapchain = 0
     ))
 
+    if recreate:
+        hvk.destroy_swapchain(api, device, old_swapchain)
 
-def setup_swapchain_image_views():
+
+def setup_swapchain_image_views(recreate=False):
     global swapchain_images, swapchain_image_views
+
+    if recreate:
+        for view in swapchain_image_views:
+            hvk.destroy_image_view(api, device, view)
 
     # Fetch swapchain images
     swapchain_images = hvk.swapchain_images(api, device, swapchain)
@@ -265,8 +270,13 @@ def setup_swapchain_image_views():
         swapchain_image_views.append(view)
 
 
-def setup_swapchain_depth_stencil():
+def setup_swapchain_depth_stencil(recreate=False):
     global depth_format, depth_stencil, depth_alloc, depth_view
+
+    if recreate:
+        hvk.destroy_image_view(api, device, depth_view)
+        hvk.destroy_image(api, device, depth_stencil)
+        hvk.free_memory(api, device, depth_alloc)
 
     width, height = window.dimensions()
 
@@ -386,19 +396,19 @@ def mesh_to_staging():
     staging_req = hvk.buffer_memory_requirements(api, device, staging_mesh_buffer)
     mt_index = find_memory_type(0, vk.MEMORY_PROPERTY_HOST_COHERENT_BIT | vk.MEMORY_PROPERTY_HOST_VISIBLE_BIT)
 
-    staging_memory = hvk.allocate_memory(api, device, hvk.memory_allocate_info(
+    staging_mesh_memory = hvk.allocate_memory(api, device, hvk.memory_allocate_info(
         allocation_size = staging_req.size,
         memory_type_index = mt_index
     ))
 
-    hvk.bind_buffer_memory(api, device, staging_mesh_buffer, staging_memory, 0)
+    hvk.bind_buffer_memory(api, device, staging_mesh_buffer, staging_mesh_memory, 0)
 
     # Upload mesh to staging data
-    data_ptr = hvk.map_memory(api, device, staging_memory, 0, staging_req.size).value
+    data_ptr = hvk.map_memory(api, device, staging_mesh_memory, 0, staging_req.size).value
 
     memmove(data_ptr, byref(mesh_data), total_mesh_size)
 
-    hvk.unmap_memory(api, device, staging_memory)
+    hvk.unmap_memory(api, device, staging_mesh_memory)
 
 
 def mesh_to_device():
@@ -442,8 +452,11 @@ def mesh_to_device():
 # RENDER SETUP
 #
 
-def create_render_pass():
+def create_render_pass(recreate=False):
     global render_pass
+
+    if recreate:
+        hvk.destroy_render_pass(api, device, render_pass)
 
     # Renderpass attachments setup
     color = hvk.attachment_description(
@@ -496,9 +509,13 @@ def create_render_pass():
     ))
 
 
-def create_framebuffers():
+def create_framebuffers(recreate=False):
     global framebuffers
 
+    if recreate:
+        for fb in framebuffers:
+            hvk.destroy_framebuffer(api, device, fb)
+    
     width, height = window.dimensions()
 
     framebuffers = []
@@ -694,8 +711,12 @@ def setup_vertex_input_binding():
     vertex_attributes = (position_attribute, normals_attribute)
 
 
-def create_pipeline():
+def create_pipeline(recreate=False):
     global pipeline, pipeline_cache
+
+    if recreate:
+        hvk.destroy_pipeline_cache(api, device, pipeline_cache)
+        hvk.destroy_pipeline(api, device, pipeline)
 
     width, height = window.dimensions()
 
@@ -730,8 +751,11 @@ def create_pipeline():
     pipeline = hvk.create_graphics_pipelines(api, device, (pipeline_info,), pipeline_cache)[0]
 
 
-def create_render_resources():
+def create_render_resources(recreate=False):
     global drawing_pool, cmd_draw, image_ready, rendering_done, render_fences
+
+    if recreate:
+        hvk.destroy_command_pool(api, device, drawing_pool)
 
     # Render commands setup
     drawing_pool = hvk.create_command_pool(api, device, hvk.command_pool_create_info(
@@ -754,7 +778,6 @@ def create_render_resources():
 
 
 def record_render_commands():
-
     # Render commands recording
     begin_info = hvk.command_buffer_begin_info()
     width, height = window.dimensions()
@@ -832,6 +855,10 @@ def clean_resources():
 
     hvk.destroy_buffer(api, device, mesh_buffer)
     hvk.free_memory(api, device, mesh_memory)
+
+    hvk.destroy_descriptor_pool(api, device, descriptor_pool)
+    hvk.destroy_buffer(api, device, uniforms_buffer)
+    hvk.free_memory(api, device, uniforms_mem)
 
     hvk.destroy_pipeline(api, device, pipeline)
     hvk.destroy_pipeline_cache(api, device, pipeline_cache)
