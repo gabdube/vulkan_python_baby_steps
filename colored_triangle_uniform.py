@@ -4,9 +4,7 @@ Render a static white triangle.
 Vertex shader use a single position attribute of type `vec3`.
 No modification (view, model, frustrum) are applied to the vertex.
 
-No uniforms/buffers defined in the shaders. 
-
-Fragment color is set to a static value of `vec4(1.0, 1.0, 1.0, 1.0)` directly in fragment shader
+Use a uniform buffer for the color
 """
 
 
