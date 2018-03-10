@@ -23,6 +23,27 @@ def image_subresource_range(**kwargs):
         layer_count = kwargs.get('layer_count', 1),
     )
 
+def image_subresource_layers(**kwargs):
+    check_ctypes_members(vk.ImageSubresourceLayers, (), kwargs.keys())
+    return vk.ImageSubresourceLayers(
+        aspect_mask = kwargs.get('aspect_mask', vk.IMAGE_ASPECT_COLOR_BIT),
+        mip_level = kwargs.get('mip_level', 0),
+        base_array_layer = kwargs.get('base_array_layer', 0),
+        layer_count = kwargs.get('layer_count', 1)
+    )
+
+
+def buffer_image_copy(**kwargs):
+    check_ctypes_members(vk.BufferImageCopy, ('image_extent', ), kwargs.keys())
+    return vk.BufferImageCopy(
+        buffer_offset = kwargs.get('buffer_offset', 0),
+        buffer_row_length = kwargs.get('buffer_row_length', 0),
+        buffer_image_height = kwargs.get('buffer_image_height', 0),
+        image_subresource = kwargs.get('image_subresource', image_subresource_layers()),
+        image_offset = kwargs.get('image_offset', vk.Offset3D(0, 0, 0)),
+        image_extent = kwargs['image_extent']
+    )
+
 
 def image_view_create_info(**kwargs):
     check_ctypes_members(vk.ImageViewCreateInfo, ('image', 'format'), kwargs.keys())

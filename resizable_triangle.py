@@ -810,5 +810,6 @@ while not window.must_exit:
     if render_ok:
         render()
 
-    time.sleep(1/60)
+    time.sleep(1/120)
+
 clean_resources()

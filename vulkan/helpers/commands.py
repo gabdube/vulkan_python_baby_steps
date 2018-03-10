@@ -102,7 +102,7 @@ def image_memory_barrier(**kwargs):
     )
 
 
-def pipeline_barrier(api, cmd, barriers, src_stage_mask=vk.PIPELINE_STAGE_TOP_OF_PIPE_BIT, dst_stage_mask=vk.PIPELINE_STAGE_TOP_OF_PIPE_BIT, dependency_flags=0):
+def pipeline_barrier(api, cmd, barriers, src_stage_mask=vk.PIPELINE_STAGE_ALL_COMMANDS_BIT, dst_stage_mask=vk.PIPELINE_STAGE_BOTTOM_OF_PIPE_BIT, dependency_flags=0):
   
     mb, bb, ib = vk.MemoryBarrier, vk.BufferMemoryBarrier, vk.ImageMemoryBarrier
 
@@ -163,6 +163,11 @@ def set_scissor(api, cmd, scissors, first_scissor=0):
 def copy_buffer(api, cmd, src_buffer, dst_buffer, regions):
     regions, regions_ptr, region_count = sequence_to_array(regions, vk.BufferCopy)
     api.CmdCopyBuffer(cmd, src_buffer, dst_buffer, region_count, regions_ptr)
+
+
+def copy_buffer_to_image(api, cmd, src_buffer, dst_image, dst_image_layout, regions):
+    regions, regions_ptr, region_count = sequence_to_array(regions, vk.BufferImageCopy)
+    api.CmdCopyBufferToImage(cmd, src_buffer, dst_image, dst_image_layout, region_count, regions_ptr)
 
 
 def execute_commands(api, cmd, sub_buffers):

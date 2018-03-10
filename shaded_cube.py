@@ -7,8 +7,7 @@ from vulkan import vk, helpers as hvk
 from vulkan.debugger import Debugger
 from system.window import Window
 from system import events as e
-from utils.mat import Mat4
-from utils.vec import Vec3
+from utils import Mat4, Vec3, KtxTexture
 
 import platform, time
 from enum import IntFlag
@@ -62,7 +61,7 @@ framebuffers = None
 shader_modules = None
 stage_infos = None
 descriptor_set_layout = None
-descriptor_pool = None
+descriptor_pool =  None
 descriptor_set = None
 uniforms_buffer = None
 uniforms_mem = None
