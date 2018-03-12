@@ -14,7 +14,8 @@ from enum import IntFlag
 from collections import namedtuple
 from ctypes import c_ubyte, c_float, sizeof, memmove, byref, Structure
 from math import radians
-import json
+import json, gc
+
 
 # Global data
 window = None
@@ -1127,7 +1128,7 @@ record_render_commands()
 window.show()
 
 # Render loop
-render_ok = True
+render_ok, counter = True, 0
 while not window.must_exit:
     window.translate_system_events()
 
@@ -1157,5 +1158,12 @@ while not window.must_exit:
     update_ubo()
 
     time.sleep(1/120)
+
+    # Force the python to collect its garbage every 5 sec
+    # otherwise, I have found that the memory consumption slowly increase
+    # as the time goes on
+    counter += 1
+    if counter % (120*5) == 0:
+        gc.collect()
 
 clean_resources()
