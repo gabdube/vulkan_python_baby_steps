@@ -15,3 +15,5 @@ glslangValidator -V ./colored_triangle_uniform/colored_triangle_uniform.frag -o 
 glslangValidator -V ./textured_cube/textured_cube.vert -o ./textured_cube/textured_cube.vert.spv
 glslangValidator -V ./textured_cube/textured_cube.frag -o ./textured_cube/textured_cube.frag.spv
 
+glslangValidator -V ./compute_noise/compute_noise.vert -o ./compute_noise/compute_noise.vert.spv
+glslangValidator -V ./compute_noise/compute_noise.frag -o ./compute_noise/compute_noise.frag.spv
