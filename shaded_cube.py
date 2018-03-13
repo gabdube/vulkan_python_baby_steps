@@ -616,30 +616,6 @@ def create_descriptor_sets():
     hvk.bind_buffer_memory(api, device, uniforms_buffer, uniforms_mem, 0)
 
 
-def update_ubo():
-    # Upload uniforms data to memory
-    data_ptr = hvk.map_memory(api, device, uniforms_mem, 0, sizeof(uniforms_data_type))
-
-    uniforms = uniforms_data_type.from_address(data_ptr.value)
-    ubo_data, light = uniforms.ubo, uniforms.light
-
-    # Perspective
-    width, height = window.dimensions()
-    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)  
-    
-    # View
-    ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)    
-
-    # Model
-    ubo_data[2] = Mat4.from_rotation(rotation, (0.0, -1.0, 0.5))
-
-    # Light stuff
-    light.color[::] = light_color
-    light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
-
-    hvk.unmap_memory(api, device, uniforms_mem)
-
-
 def write_descriptor_sets():
     ubo_buffer_info = vk.DescriptorBufferInfo(
         buffer = uniforms_buffer,
@@ -668,6 +644,30 @@ def write_descriptor_sets():
     )
 
     hvk.update_descriptor_sets(api, device, (write_set_ubo, write_set_light), ())
+
+
+def update_ubo():
+    # Upload uniforms data to memory
+    data_ptr = hvk.map_memory(api, device, uniforms_mem, 0, sizeof(uniforms_data_type))
+
+    uniforms = uniforms_data_type.from_address(data_ptr.value)
+    ubo_data, light = uniforms.ubo, uniforms.light
+
+    # Perspective
+    width, height = window.dimensions()
+    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)  
+    
+    # View
+    ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)    
+
+    # Model
+    ubo_data[2] = Mat4.from_rotation(rotation, (0.0, -1.0, 0.5))
+
+    # Light stuff
+    light.color[::] = light_color
+    light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
+
+    hvk.unmap_memory(api, device, uniforms_mem)
 
 
 def create_pipeline_layout():
