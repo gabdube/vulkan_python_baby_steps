@@ -232,7 +232,7 @@ def create_swapchain(recreate=False):
         transform = vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR
 
     # Swapchain creation
-    old_swapchain = swapchain
+    old_swapchain = swapchain or 0
     swapchain_image_format = selected_format.format
     swapchain = hvk.create_swapchain(api, device, hvk.swapchain_create_info(
         surface = surface,
@@ -242,7 +242,7 @@ def create_swapchain(recreate=False):
         min_image_count = min_image_count,
         present_mode = present_mode,
         pre_transform = transform,
-        old_swapchain = 0
+        old_swapchain = old_swapchain
     ))
 
     if recreate:
@@ -755,6 +755,11 @@ def create_render_resources(recreate=False):
 
     if recreate:
         hvk.destroy_command_pool(api, device, drawing_pool)
+        hvk.destroy_semaphore(api, device, image_ready)
+        hvk.destroy_semaphore(api, device, rendering_done)
+
+        for f in render_fences:
+            hvk.destroy_fence(api, device, f)
 
     # Render commands setup
     drawing_pool = hvk.create_command_pool(api, device, hvk.command_pool_create_info(
