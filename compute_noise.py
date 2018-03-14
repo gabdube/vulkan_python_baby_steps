@@ -53,10 +53,20 @@ staging_mesh_memory = None
 mesh_buffer = None
 mesh_memory = None
 
+noise_texture = None
+noise_view = None
+noise_alloc = None
+noise_sampler = None
+
+compute_descriptor_set_layout = None
+compute_pipeline_layout = None
+compute_descriptor_pool = None
+compute_descriptor_set = None
+compute_module = None
+compute_pipeline = None
+
 render_pass = None
 framebuffers = None
-
-compute_module = None
 
 shader_modules = None
 stage_infos = None
@@ -335,7 +345,7 @@ def create_staging_command():
 
 
 #
-# Resources setup
+# RESOURCES SETUP
 #
 
 def load_mesh():
@@ -446,21 +456,129 @@ def mesh_to_device():
     hvk.free_memory(api, device, staging_mesh_memory)
     del staging_mesh_buffer, staging_mesh_memory
 
+
+def create_noise_texture_output():
+    global noise_texture, noise_view, noise_alloc, noise_sampler
+
+    # Noise image
+    noise_texture = hvk.create_image(api, device, hvk.image_create_info(
+        format = vk.FORMAT_B8G8R8A8_UNORM,
+        extent = vk.Extent3D(width=256, height=256, depth=1),
+        usage = vk.IMAGE_USAGE_STORAGE_BIT | vk.IMAGE_USAGE_SAMPLED_BIT
+    ))
+
+    noise_memreq = hvk.image_memory_requirements(api, device, noise_texture)
+    mt_index = find_memory_type(vk.MEMORY_HEAP_DEVICE_LOCAL_BIT, vk.MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
+    noise_alloc = hvk.allocate_memory(api, device, hvk.memory_allocate_info(
+        allocation_size = noise_memreq.size,
+        memory_type_index = mt_index
+    ))
+
+    hvk.bind_image_memory(api, device, noise_texture, noise_alloc)
+
+    # Noise view
+    noise_view = hvk.create_image_view(api, device, hvk.image_view_create_info(
+        image = noise_texture,
+        format = vk.FORMAT_B8G8R8A8_UNORM
+    ))
+
+    # Noise sampler
+    noise_sampler = hvk.create_sampler(api, device, hvk.sampler_create_info(
+        mag_filter = vk.FILTER_LINEAR,
+        min_filter = vk.FILTER_LINEAR,
+    ))
+
+
+def noise_layout_to_general():
+    # Image that support write operation must have the layout `IMAGE_LAYOUT_GENERAL`
+    pass
+
 #
 # NOISE COMPUTE SETUP
 #
-
-def create_noise_texture_output():
-    pass
 
 
 def create_compute_shader():
     global compute_module
 
-    with open('resources/shaders/compute_noise/compute_noise.frag.spv', 'rb') as f:
+    with open('resources/shaders/compute_noise/compute_noise.comp.spv', 'rb') as f:
         compute_module = hvk.create_shader_module(api, device, hvk.shader_module_create_info(
             code = f.read()
         ))
+
+
+def create_compute_descriptor_set_layout():
+    global compute_descriptor_set_layout
+
+    noise_binding = hvk.descriptor_set_layout_binding(
+        binding = 0,
+        descriptor_type = vk.DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        descriptor_count = 1,
+        stage_flags = vk.SHADER_STAGE_COMPUTE_BIT
+    )
+
+    # Setup shader descriptor set 
+    info = hvk.descriptor_set_layout_create_info(bindings = (noise_binding,))
+    compute_descriptor_set_layout = hvk.create_descriptor_set_layout(api, device, info)
+
+
+def create_compute_descriptor_sets():
+    global compute_descriptor_pool, compute_descriptor_set
+
+    pool_size = vk.DescriptorPoolSize(
+        type = vk.DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        descriptor_count = 1
+    )
+
+    compute_descriptor_pool = hvk.create_descriptor_pool(api, device, hvk.descriptor_pool_create_info(
+        max_sets = 1,
+        pool_sizes = (pool_size,)
+    ))
+
+    compute_descriptor_set = hvk.allocate_descriptor_sets(api, device, hvk.descriptor_set_allocate_info(
+        descriptor_pool = compute_descriptor_pool,
+        set_layouts = (compute_descriptor_set_layout,)
+    ))[0]
+
+
+def write_compute_descriptor_sets():
+    noise_info = vk.DescriptorImageInfo(
+        sampler = noise_sampler,
+        image_view = noise_view,
+        image_layout = vk.IMAGE_LAYOUT_GENERAL
+    )
+
+    write_set_ubo = hvk.write_descriptor_set(
+        dst_set = compute_descriptor_set,
+        dst_binding = 0,
+        descriptor_type = vk.DESCRIPTOR_TYPE_STORAGE_IMAGE,
+        image_info = (noise_info,)
+    )
+
+    hvk.update_descriptor_sets(api, device, (write_set_ubo,), ())
+
+
+def create_compute_pipeline_layout():
+    global compute_pipeline_layout
+
+    compute_pipeline_layout = hvk.create_pipeline_layout(api, device, hvk.pipeline_layout_create_info(
+        set_layouts=(compute_descriptor_set_layout,)
+    ))
+
+
+def create_compute_pipeline():
+    global compute_pipeline, compute_pipeline_cache
+    compute_pipeline_cache = hvk.create_pipeline_cache(api, device, hvk.pipeline_cache_create_info())
+
+    compute_info = hvk.compute_pipeline_create_info(
+        stage = hvk.pipeline_shader_stage_create_info(
+            stage = vk.SHADER_STAGE_COMPUTE_BIT,
+            module = compute_module
+        ),
+        layout = compute_pipeline_layout
+    )
+
+    compute_pipeline = hvk.create_compute_pipelines(api, device, (compute_info,), compute_pipeline_cache)
 
 def compute_noise():
     pass
@@ -549,7 +667,7 @@ def create_framebuffers(recreate=False):
 
 
 def create_shaders():
-    global shader_modules, stage_infos, 
+    global shader_modules, stage_infos 
 
     shader_modules, stage_infos = [], []
     shader_sources = {
@@ -839,19 +957,30 @@ def clean_resources():
     hvk.destroy_buffer(api, device, mesh_buffer)
     hvk.free_memory(api, device, mesh_memory)
 
-    hvk.destroy_descriptor_pool(api, device, descriptor_pool)
-    hvk.destroy_buffer(api, device, uniforms_buffer)
-    hvk.free_memory(api, device, uniforms_mem)
+    hvk.destroy_sampler(api, device, noise_sampler)
+    hvk.destroy_image_view(api, device, noise_view)
+    hvk.destroy_image(api, device, noise_texture)
+    hvk.free_memory(api, device, noise_alloc)
+
+    hvk.destroy_pipeline(api, device, compute_pipeline)
+    hvk.destroy_pipeline_cache(api, device, compute_pipeline_cache)
+    hvk.destroy_pipeline_layout(api, device, compute_pipeline_layout)
 
     hvk.destroy_pipeline(api, device, pipeline)
     hvk.destroy_pipeline_cache(api, device, pipeline_cache)
     hvk.destroy_pipeline_layout(api, device, pipeline_layout)
 
+    hvk.destroy_descriptor_pool(api, device, compute_descriptor_pool)
+    hvk.destroy_descriptor_pool(api, device, descriptor_pool)
+    hvk.destroy_buffer(api, device, uniforms_buffer)
+    hvk.free_memory(api, device, uniforms_mem)
+
+    hvk.destroy_descriptor_set_layout(api, device, descriptor_set_layout)
+    hvk.destroy_descriptor_set_layout(api, device, compute_descriptor_set_layout)
+
     hvk.destroy_shader_module(api, device, compute_module)
     for m in shader_modules:
         hvk.destroy_shader_module(api, device, m)
-
-    hvk.destroy_descriptor_set_layout(api, device, descriptor_set_layout)
 
     for fb in framebuffers:
         hvk.destroy_framebuffer(api, device, fb)
@@ -897,9 +1026,15 @@ setup_swapchain_depth_stencil()
 load_mesh()
 mesh_to_staging()
 mesh_to_device()
-
 create_noise_texture_output()
+noise_layout_to_general()
+
 create_compute_shader()
+create_compute_descriptor_set_layout()
+create_compute_descriptor_sets()
+write_compute_descriptor_sets()
+create_compute_pipeline_layout()
+create_compute_pipeline()
 compute_noise()
 
 create_render_pass()
@@ -908,8 +1043,6 @@ create_shaders()
 create_descriptor_set_layout()
 create_descriptor_sets()
 write_descriptor_sets()
-update_ubo()
-update_ubo()
 create_pipeline_layout()
 setup_vertex_input_binding()
 create_pipeline()
@@ -917,6 +1050,7 @@ create_pipeline()
 create_render_resources()
 record_render_commands()
 
+update_ubo()
 window.show()
 
 # Render loop

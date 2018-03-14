@@ -296,5 +296,31 @@ def create_graphics_pipelines(api, device, infos, cache=None):
     return tuple(vk.Pipeline(p) for p in pipelines)
 
 
+def compute_pipeline_create_info(**kwargs):
+    required_fields = ('stage', 'layout')
+    check_ctypes_members(vk.ComputePipelineCreateInfo, required_fields, kwargs.keys())
+
+    return vk.ComputePipelineCreateInfo(
+        type = vk.STRUCTURE_TYPE_COMPUTE_PIPELINE_CREATE_INFO,
+        next = None,
+        flags = 0,
+        stage = kwargs['stage'],
+        layout = kwargs['layout'],
+        base_pipeline_handle = kwargs.get('base_pipeline_handle', 0),
+        base_pipeline_index = kwargs.get('base_pipeline_index', 0)
+    )
+
+
+def create_compute_pipelines(api, device, infos, cache = None):
+    infos, infos_ptr, infos_count = sequence_to_array(infos, vk.ComputePipelineCreateInfo)
+    pipelines = array(vk.Pipeline, infos_count)()
+
+    result = api.CreateComputePipelines(device, cache, infos_count, infos_ptr, None, array_pointer(pipelines))
+    if result != vk.SUCCESS:
+        raise RuntimeError(f"Failed to create compute pipeline: {result}")
+    
+    return tuple(vk.Pipeline(p) for p in pipelines)
+
+
 def destroy_pipeline(api, device, pipeline):
     api.DestroyPipeline(device, pipeline, None)
