@@ -56,6 +56,8 @@ mesh_memory = None
 render_pass = None
 framebuffers = None
 
+compute_module = None
+
 shader_modules = None
 stage_infos = None
 descriptor_set_layout = None
@@ -445,6 +447,26 @@ def mesh_to_device():
     del staging_mesh_buffer, staging_mesh_memory
 
 #
+# NOISE COMPUTE SETUP
+#
+
+def create_noise_texture_output():
+    pass
+
+
+def create_compute_shader():
+    global compute_module
+
+    with open('resources/shaders/compute_noise/compute_noise.frag.spv', 'rb') as f:
+        compute_module = hvk.create_shader_module(api, device, hvk.shader_module_create_info(
+            code = f.read()
+        ))
+
+def compute_noise():
+    pass
+
+
+#
 # RENDER SETUP
 #
 
@@ -527,12 +549,12 @@ def create_framebuffers(recreate=False):
 
 
 def create_shaders():
-    global shader_modules, stage_infos
+    global shader_modules, stage_infos, 
 
     shader_modules, stage_infos = [], []
     shader_sources = {
         vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/compute_noise/compute_noise.vert.spv',
-        vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/compute_noise/compute_noise.frag.spv'
+        vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/compute_noise/compute_noise.frag.spv',
     }
     
     for stage, src in shader_sources.items():
@@ -825,6 +847,7 @@ def clean_resources():
     hvk.destroy_pipeline_cache(api, device, pipeline_cache)
     hvk.destroy_pipeline_layout(api, device, pipeline_layout)
 
+    hvk.destroy_shader_module(api, device, compute_module)
     for m in shader_modules:
         hvk.destroy_shader_module(api, device, m)
 
@@ -875,6 +898,10 @@ load_mesh()
 mesh_to_staging()
 mesh_to_device()
 
+create_noise_texture_output()
+create_compute_shader()
+compute_noise()
+
 create_render_pass()
 create_framebuffers()
 create_shaders()
@@ -915,6 +942,8 @@ while not window.must_exit:
             render_ok = True
         elif event is e.RenderDisable:
             render_ok = False
+
+        update_ubo()
 
     if render_ok:
         render()

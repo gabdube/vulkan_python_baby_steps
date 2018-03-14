@@ -17,3 +17,4 @@ glslangValidator -V ./textured_cube/textured_cube.frag -o ./textured_cube/textur
 
 glslangValidator -V ./compute_noise/compute_noise.vert -o ./compute_noise/compute_noise.vert.spv
 glslangValidator -V ./compute_noise/compute_noise.frag -o ./compute_noise/compute_noise.frag.spv
+glslangValidator -V ./compute_noise/compute_noise.comp -o ./compute_noise/compute_noise.comp.spv
