@@ -53,7 +53,7 @@ staging_mesh_memory = None
 mesh_buffer = None
 mesh_memory = None
 
-noise_texture = None
+noise_image = None
 noise_view = None
 noise_alloc = None
 noise_sampler = None
@@ -457,28 +457,28 @@ def mesh_to_device():
     del staging_mesh_buffer, staging_mesh_memory
 
 
-def create_noise_texture_output():
-    global noise_texture, noise_view, noise_alloc, noise_sampler
+def create_noise_image_output():
+    global noise_image, noise_view, noise_alloc, noise_sampler
 
     # Noise image
-    noise_texture = hvk.create_image(api, device, hvk.image_create_info(
+    noise_image = hvk.create_image(api, device, hvk.image_create_info(
         format = vk.FORMAT_B8G8R8A8_UNORM,
         extent = vk.Extent3D(width=256, height=256, depth=1),
         usage = vk.IMAGE_USAGE_STORAGE_BIT | vk.IMAGE_USAGE_SAMPLED_BIT
     ))
 
-    noise_memreq = hvk.image_memory_requirements(api, device, noise_texture)
+    noise_memreq = hvk.image_memory_requirements(api, device, noise_image)
     mt_index = find_memory_type(vk.MEMORY_HEAP_DEVICE_LOCAL_BIT, vk.MEMORY_PROPERTY_DEVICE_LOCAL_BIT)
     noise_alloc = hvk.allocate_memory(api, device, hvk.memory_allocate_info(
         allocation_size = noise_memreq.size,
         memory_type_index = mt_index
     ))
 
-    hvk.bind_image_memory(api, device, noise_texture, noise_alloc)
+    hvk.bind_image_memory(api, device, noise_image, noise_alloc)
 
     # Noise view
     noise_view = hvk.create_image_view(api, device, hvk.image_view_create_info(
-        image = noise_texture,
+        image = noise_image,
         format = vk.FORMAT_B8G8R8A8_UNORM
     ))
 
@@ -491,7 +491,23 @@ def create_noise_texture_output():
 
 def noise_layout_to_general():
     # Image that support write operation must have the layout `IMAGE_LAYOUT_GENERAL`
-    pass
+    hvk.begin_command_buffer(api, staging_cmd, hvk.command_buffer_begin_info())
+
+    barrier = hvk.image_memory_barrier(
+        image = noise_image,
+        new_layout = vk.IMAGE_LAYOUT_GENERAL,
+        dst_access_mask = vk.ACCESS_TRANSFER_WRITE_BIT,
+    )
+
+    hvk.pipeline_barrier(api, staging_cmd, (barrier,), dst_stage_mask=vk.PIPELINE_STAGE_TRANSFER_BIT)
+
+    hvk.end_command_buffer(api, staging_cmd)
+
+    # Submit the staging command buffer
+    hvk.reset_fences(api, device, (staging_fence,))
+    submit_info = hvk.submit_info(command_buffers = (staging_cmd,))
+    hvk.queue_submit(api, render_queue.handle, (submit_info,), fence = staging_fence)
+    hvk.wait_for_fences(api, device, (staging_fence,))
 
 #
 # NOISE COMPUTE SETUP
@@ -568,6 +584,7 @@ def create_compute_pipeline_layout():
 
 def create_compute_pipeline():
     global compute_pipeline, compute_pipeline_cache
+
     compute_pipeline_cache = hvk.create_pipeline_cache(api, device, hvk.pipeline_cache_create_info())
 
     compute_info = hvk.compute_pipeline_create_info(
@@ -578,10 +595,37 @@ def create_compute_pipeline():
         layout = compute_pipeline_layout
     )
 
-    compute_pipeline = hvk.create_compute_pipelines(api, device, (compute_info,), compute_pipeline_cache)
+    compute_pipelines = hvk.create_compute_pipelines(api, device, (compute_info,), compute_pipeline_cache)
+    compute_pipeline = compute_pipelines[0]
+
 
 def compute_noise():
-    pass
+
+    hvk.begin_command_buffer(api, staging_cmd, hvk.command_buffer_begin_info())
+
+    # Execute the compute shader
+    hvk.bind_pipeline(api, staging_cmd, compute_pipeline, vk.PIPELINE_BIND_POINT_COMPUTE)
+    hvk.bind_descriptor_sets(api, staging_cmd, vk.PIPELINE_BIND_POINT_COMPUTE, compute_pipeline_layout, (compute_descriptor_set,))
+    hvk.dispatch(api, staging_cmd, 256//16, 256//16, 1)
+
+    # Move the image layout to shader read optimal for rendering
+    barrier = hvk.image_memory_barrier(
+        image = noise_image,
+        old_layout = vk.IMAGE_LAYOUT_GENERAL,
+        new_layout = vk.IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL,
+        src_access_mask = vk.ACCESS_TRANSFER_WRITE_BIT,
+        dst_access_mask = vk.ACCESS_SHADER_READ_BIT,
+    )
+
+    hvk.pipeline_barrier(api, staging_cmd, (barrier,), dst_stage_mask=vk.PIPELINE_STAGE_FRAGMENT_SHADER_BIT)
+
+    hvk.end_command_buffer(api, staging_cmd)
+
+    # Submit the staging command buffer
+    hvk.reset_fences(api, device, (staging_fence,))
+    submit_info = hvk.submit_info(command_buffers = (staging_cmd,))
+    hvk.queue_submit(api, render_queue.handle, (submit_info,), fence = staging_fence)
+    hvk.wait_for_fences(api, device, (staging_fence,))
 
 
 #
@@ -959,7 +1003,7 @@ def clean_resources():
 
     hvk.destroy_sampler(api, device, noise_sampler)
     hvk.destroy_image_view(api, device, noise_view)
-    hvk.destroy_image(api, device, noise_texture)
+    hvk.destroy_image(api, device, noise_image)
     hvk.free_memory(api, device, noise_alloc)
 
     hvk.destroy_pipeline(api, device, compute_pipeline)
@@ -1008,6 +1052,7 @@ def clean_resources():
 
     window.destroy()
 
+
 # Run setup
 create_window()
 create_instance()
@@ -1026,7 +1071,7 @@ setup_swapchain_depth_stencil()
 load_mesh()
 mesh_to_staging()
 mesh_to_device()
-create_noise_texture_output()
+create_noise_image_output()
 noise_layout_to_general()
 
 create_compute_shader()

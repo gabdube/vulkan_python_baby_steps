@@ -206,6 +206,10 @@ def draw_indexed(api, cmd, index_count, instance_count=1, first_index=0, vertex_
     )
 
 
+def dispatch(api, cmd, x, y, z):
+    api.CmdDispatch(cmd, x, y, z)
+
+
 def bind_descriptor_sets(api, cmd, pipeline_bind_point, layout, descriptor_sets, dynamic_offsets=None, firstSet=0):
 
     descriptor_sets, descriptor_sets_ptr, descriptor_set_count = sequence_to_array(descriptor_sets, vk.DescriptorSet)

@@ -1,6 +1,6 @@
 from .. import vk
 from .utils import check_ctypes_members, sequence_to_array, array, array_pointer
-from ctypes import byref, c_char_p, c_float, pointer
+from ctypes import byref, c_char_p, c_float, pointer, c_int
 
 
 def pipeline_cache_create_info(**kwargs):
@@ -285,7 +285,7 @@ def graphics_pipeline_create_info(**kwargs):
     )
 
 
-def create_graphics_pipelines(api, device, infos, cache=None):
+def create_graphics_pipelines(api, device, infos, cache=0):
     infos, infos_ptr, infos_count = sequence_to_array(infos, vk.GraphicsPipelineCreateInfo)
     pipelines = array(vk.Pipeline, infos_count)()
 
@@ -307,17 +307,17 @@ def compute_pipeline_create_info(**kwargs):
         stage = kwargs['stage'],
         layout = kwargs['layout'],
         base_pipeline_handle = kwargs.get('base_pipeline_handle', 0),
-        base_pipeline_index = kwargs.get('base_pipeline_index', 0)
+        base_pipeline_index = kwargs.get('base_pipeline_index', -1)
     )
 
 
-def create_compute_pipelines(api, device, infos, cache = None):
+def create_compute_pipelines(api, device, infos, cache = 0):
     infos, infos_ptr, infos_count = sequence_to_array(infos, vk.ComputePipelineCreateInfo)
     pipelines = array(vk.Pipeline, infos_count)()
 
     result = api.CreateComputePipelines(device, cache, infos_count, infos_ptr, None, array_pointer(pipelines))
     if result != vk.SUCCESS:
-        raise RuntimeError(f"Failed to create compute pipeline: {result}")
+        raise RuntimeError(f"Failed to create compute pipeline: {c_int(result)}")
     
     return tuple(vk.Pipeline(p) for p in pipelines)
 
