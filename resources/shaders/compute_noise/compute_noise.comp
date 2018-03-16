@@ -8,5 +8,5 @@ layout (binding = 0, rgba8) uniform image2D noise;
 
 
 void main() {
-    imageStore(noise, ivec2(gl_GlobalInvocationID.xy), vec4(0.0, 1.0, 1.0, 1.0));
+    imageStore(noise, ivec2(gl_GlobalInvocationID.xy), vec4(1.0, 1.0, 0.0, 1.0));
 }

@@ -45,6 +45,7 @@ staging_fence = None
 
 mesh_positions = {'data': None, 'size': None, 'offset': None}
 mesh_indices = {'data': None, 'size': None, 'offset': None}
+mesh_uvs = {'data': None, 'size': None, 'offset': None}
 total_mesh_size = None
 
 staging_mesh_buffer = None
@@ -349,7 +350,7 @@ def create_staging_command():
 #
 
 def load_mesh():
-    global mesh_positions, mesh_indices, total_mesh_size
+    global mesh_positions, mesh_indices, mesh_uvs, total_mesh_size
 
     # Store mesh data to into ctypes buffers
     indices = (0, 1, 2, 1, 2, 3)
@@ -362,18 +363,35 @@ def load_mesh():
         -1.0,  -1.0,  0.0
     )
 
+    uvs = (
+        1.0, 1.0,
+        0.0, 1.0,
+        1.0, 0.0,
+        0.0, 0.0
+    )
+
     positions_data = (c_float*len(positions))(*positions)
     positions_data_size = sizeof(positions_data)
     positions_data_offset = 0
 
+    uvs_data = (c_float*len(uvs))(*uvs)
+    uvs_data_size = sizeof(uvs_data)
+    uvs_data_offset = positions_data_size
+
     indices_data = (c_ushort*len(indices))(*indices)
     indices_data_size = sizeof(indices_data)
-    indices_data_offset = positions_data_size
+    indices_data_offset = uvs_data_size + uvs_data_offset
 
     mesh_positions = {
         'data': positions_data,
         'size': positions_data_size,
         'offset': positions_data_offset
+    }
+
+    mesh_uvs = {
+        'data': uvs_data,
+        'size': uvs_data_size,
+        'offset': uvs_data_offset
     }
 
     mesh_indices = {
@@ -383,7 +401,7 @@ def load_mesh():
         'count': indices_count
     }
 
-    total_mesh_size = mesh_positions['size'] + mesh_indices['size']
+    total_mesh_size = mesh_positions['size'] + mesh_indices['size'] + mesh_uvs['size']
 
 
 def mesh_to_staging():
@@ -409,6 +427,7 @@ def mesh_to_staging():
     data_ptr = hvk.map_memory(api, device, staging_mesh_memory, 0, staging_req.size).value
 
     memmove(data_ptr + mesh_positions['offset'], byref(mesh_positions['data']), mesh_positions['size'])
+    memmove(data_ptr + mesh_uvs['offset'], byref(mesh_uvs['data']), mesh_uvs['size'])
     memmove(data_ptr + mesh_indices['offset'], byref(mesh_indices['data']), mesh_indices['size'])
 
     hvk.unmap_memory(api, device, staging_mesh_memory)
@@ -508,6 +527,7 @@ def noise_layout_to_general():
     submit_info = hvk.submit_info(command_buffers = (staging_cmd,))
     hvk.queue_submit(api, render_queue.handle, (submit_info,), fence = staging_fence)
     hvk.wait_for_fences(api, device, (staging_fence,))
+
 
 #
 # NOISE COMPUTE SETUP
@@ -742,8 +762,15 @@ def create_descriptor_set_layout():
         stage_flags = vk.SHADER_STAGE_VERTEX_BIT
     )
 
+    sampler_binding = hvk.descriptor_set_layout_binding(
+        binding = 1,
+        descriptor_type = vk.DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        descriptor_count = 1,
+        stage_flags = vk.SHADER_STAGE_FRAGMENT_BIT
+    )
+
     # Setup shader descriptor set 
-    info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding,))
+    info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding, sampler_binding))
     descriptor_set_layout = hvk.create_descriptor_set_layout(api, device, info)
 
 
@@ -762,9 +789,14 @@ def create_descriptor_sets():
         descriptor_count = 1
     )
 
+    sampler_pool_size = vk.DescriptorPoolSize(
+        type = vk.DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        descriptor_count = 1
+    )
+
     descriptor_pool = hvk.create_descriptor_pool(api, device, hvk.descriptor_pool_create_info(
         max_sets = 1,
-        pool_sizes = (pool_size,)
+        pool_sizes = (pool_size, sampler_pool_size)
     ))
 
     descriptor_set = hvk.allocate_descriptor_sets(api, device, hvk.descriptor_set_allocate_info(
@@ -797,6 +829,12 @@ def write_descriptor_sets():
         range = sizeof(ubo_data_type)
     )
 
+    sampler_image_info = vk.DescriptorImageInfo(
+        sampler = noise_sampler,
+        image_view = noise_view,
+        image_layout = vk.IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    )
+
     write_set_ubo = hvk.write_descriptor_set(
         dst_set = descriptor_set,
         dst_binding = 0,
@@ -804,7 +842,14 @@ def write_descriptor_sets():
         buffer_info = (ubo_buffer_info,)
     )
 
-    hvk.update_descriptor_sets(api, device, (write_set_ubo,), ())
+    write_sampler = hvk.write_descriptor_set(
+        dst_set = descriptor_set,
+        dst_binding = 1,
+        descriptor_type = vk.DESCRIPTOR_TYPE_COMBINED_IMAGE_SAMPLER,
+        image_info = (sampler_image_info,)
+    )
+
+    hvk.update_descriptor_sets(api, device, (write_set_ubo, write_sampler), ())
 
 
 def update_ubo():
@@ -844,6 +889,11 @@ def setup_vertex_input_binding():
         stride = hvk.utils.format_size(vk.FORMAT_R32G32B32_SFLOAT)
     )
 
+    uvs_binding = hvk.vertex_input_binding_description(
+        binding = 1,
+        stride = hvk.utils.format_size(vk.FORMAT_R32G32_SFLOAT)
+    )
+
     position_attribute = hvk.vertex_input_attribute_description(
         location = 0,
         binding = 0,
@@ -851,8 +901,15 @@ def setup_vertex_input_binding():
         offset = 0
     )
 
-    vertex_bindings = (position_binding,)
-    vertex_attributes = (position_attribute,)
+    uvs_attribute = hvk.vertex_input_attribute_description(
+        location = 1,
+        binding = 1,
+        format = vk.FORMAT_R32G32_SFLOAT,
+        offset = 0
+    )
+
+    vertex_bindings = (position_binding, uvs_binding)
+    vertex_attributes = (position_attribute, uvs_attribute)
 
 
 def create_pipeline(recreate=False):
@@ -950,7 +1007,10 @@ def record_render_commands():
         hvk.bind_descriptor_sets(api, cmd, vk.PIPELINE_BIND_POINT_GRAPHICS, pipeline_layout, (descriptor_set,))
 
         hvk.bind_index_buffer(api, cmd, mesh_buffer, mesh_indices['offset'], vk.INDEX_TYPE_UINT16)
-        hvk.bind_vertex_buffers(api, cmd, (mesh_buffer,), (mesh_positions['offset'],))
+        hvk.bind_vertex_buffers(api, cmd, 
+            (mesh_buffer, mesh_buffer),
+            (mesh_positions['offset'], mesh_uvs['offset'])
+        )
 
         hvk.draw_indexed(api, cmd, mesh_indices['count'])
         
