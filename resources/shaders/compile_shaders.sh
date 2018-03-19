@@ -18,3 +18,6 @@ glslangValidator -V ./textured_cube/textured_cube.frag -o ./textured_cube/textur
 glslangValidator -V ./compute_noise/compute_noise.vert -o ./compute_noise/compute_noise.vert.spv
 glslangValidator -V ./compute_noise/compute_noise.frag -o ./compute_noise/compute_noise.frag.spv
 glslangValidator -V ./compute_noise/compute_noise.comp -o ./compute_noise/compute_noise.comp.spv
+
+glslangValidator -V ./corset/corset.vert -o ./corset/corset.vert.spv
+glslangValidator -V ./corset/corset.frag -o ./corset/corset.frag.spv

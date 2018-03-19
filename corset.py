@@ -1,5 +1,5 @@
 """
-Render a colored cube that rotates
+Render a stylish avocado using a PBR shader.
 """
 
 
@@ -49,9 +49,10 @@ gltf_data = None
 mesh_positions = {'offset': None}
 mesh_normals = {'offset': None}
 mesh_uvs = {'offset': None}
+mesh_tangent = {'offset': None}
 mesh_indices = {'offset': None, 'count': None}
 mesh_data = None
-texture = None
+textures = {"color": None, "normal": None, "roughness": None}
 total_mesh_size = None
 
 staging_mesh_buffer = None
@@ -61,6 +62,7 @@ mesh_memory = None
 
 staging_texture_buffer = None
 staging_texture_memory = None
+
 texture_image = None
 texture_image_memory = None
 texture_image_layout = None
@@ -94,7 +96,7 @@ rendering_done = None
 render_fences = None
 
 # Uniforms variables setup
-rotation, zoom = 0, 2.0
+rotation, zoom = 0, 0.09
 reverse_light_direction = (0.5, -0.7, 1.0)
 
 # Typing setup
@@ -124,6 +126,7 @@ def find_memory_type(heap_flags, type_flags):
             break
 
     return type_index
+
 
 def create_window():
     global window
@@ -358,10 +361,10 @@ def create_staging_command():
 #
 
 def load_mesh():
-    global mesh_positions, mesh_indices, mesh_normals, mesh_uvs
+    global mesh_positions, mesh_indices, mesh_normals, mesh_uvs, mesh_tangent
     global total_mesh_size, mesh_data, gltf_data
 
-    with open('resources/BoxTextured.gltf') as f:
+    with open('resources/Corset.gltf') as f:
         gltf_data = json.load(f) 
 
     binary_data_info = gltf_data['buffers'][0]
@@ -386,14 +389,20 @@ def load_mesh():
     uvs = accessors[box['attributes']['TEXCOORD_0']]
     uvs_view = views[uvs['bufferView']]
 
-    indices_data_offset = indices['byteOffset'] + indices_view['byteOffset']
-    normals_data_offset = normals['byteOffset'] + normals_view['byteOffset']
-    positions_data_offset = positions['byteOffset'] + positions_view['byteOffset']
-    uvs_data_offset = uvs['byteOffset'] + uvs_view['byteOffset']
+    tangent = accessors[box['attributes']['TANGENT']]
+    tangent_view = views[tangent['bufferView']]
+
+
+    indices_data_offset = indices.get('byteOffset', 0) + indices_view['byteOffset']
+    normals_data_offset = normals.get('byteOffset', 0) + normals_view['byteOffset']
+    positions_data_offset = positions.get('byteOffset', 0) + positions_view['byteOffset']
+    uvs_data_offset = uvs.get('byteOffset', 0) + uvs_view.get('byteOffset', 0)
+    tangent_data_offset = tangent.get('byteOffset', 0) + tangent_view.get('byteOffset', 0)
 
     mesh_positions = { 'offset': positions_data_offset }
     mesh_normals = { 'offset': normals_data_offset }
     mesh_uvs = {'offset': uvs_data_offset}
+    mesh_tangent = {'offset': tangent_data_offset}
 
     mesh_indices = {
         'offset': indices_data_offset,
@@ -472,18 +481,25 @@ def mesh_to_device():
 
 
 def load_texture():
-    global texture
+    global textures
 
-    uri = gltf_data['images'][0]['uri']
-    texture = KtxTexture.load('resources/' + uri)
+    color_uri = gltf_data['images'][0]['uri']
+    textures['color'] = KtxTexture.load('resources/' + color_uri)
+
+    roughness_uri = gltf_data['images'][1]['uri']
+    textures['roughness'] = KtxTexture.load('resources/' + roughness_uri)
+
+    normal_uri = gltf_data['images'][2]['uri']
+    textures['normal'] = KtxTexture.load('resources/' + normal_uri)
 
 
 def texture_to_staging():
-    global staging_texture_buffer, staging_texture_memory
+    global textures, staging_texture_buffer, staging_texture_memory
 
     # Create staging resources
+    textures_data_size = sum(len(t.data) for t in textures.values())
     staging_texture_buffer = hvk.create_buffer(api, device, hvk.buffer_create_info(
-        size = len(texture.data),
+        size = textures_data_size,
         usage = vk.BUFFER_USAGE_TRANSFER_SRC_BIT
     ))
 
@@ -499,7 +515,13 @@ def texture_to_staging():
     # Upload texture to staging data
     data_ptr = hvk.map_memory(api, device, staging_texture_memory, 0, staging_req.size).value
     
-    memmove(data_ptr, texture.data_ptr(), len(texture.data))
+    offset = 0
+    for texture_name in ('color', 'roughness', 'normal'):
+        texture = textures[texture_name]
+        texture_size = len(texture.data)
+
+        memmove(data_ptr+offset, texture.data_ptr(), texture_size)
+        offset += texture_size
 
     hvk.unmap_memory(api, device, staging_texture_memory)
 
@@ -508,13 +530,19 @@ def texture_to_device():
     global texture_image, texture_image_memory, texture_image_layout, texture_view, texture_sampler
     global texture, staging_texture_buffer, staging_texture_memory
     
-    # Create the vulkan image
+    # Create a vulkan image array that will hold the different textures
     texture_image_layout = vk.IMAGE_LAYOUT_SHADER_READ_ONLY_OPTIMAL
+    
+    # Use the color texture as reference for the image format, mip_levels & extent
+    texture = textures['color']
+    textures_count = len(textures.keys())
 
     texture_image = hvk.create_image(api, device, hvk.image_create_info(
         format = texture.format,
         mip_levels = len(texture.mipmaps),
-        extent = vk.Extent3D(texture.width, texture.height, texture.depth),
+        image_type = vk.IMAGE_TYPE_2D,
+        extent = vk.Extent3D(texture.width, texture.height, 1),
+        array_layers = textures_count,
         usage = vk.IMAGE_USAGE_TRANSFER_DST_BIT | vk.IMAGE_USAGE_SAMPLED_BIT,
     ))
 
@@ -528,18 +556,25 @@ def texture_to_device():
 
     hvk.bind_image_memory(api, device, texture_image, texture_image_memory, 0)
 
-    # Build the copy regions (1 for each mipmap)
+    # Build the copy regions (for each texture and for each texture mipmaps)
+    offset = 0
     regions = []
-    for i, m in enumerate(texture.mipmaps):
-        region = hvk.buffer_image_copy(
-            image_subresource = hvk.image_subresource_layers(
-                mip_level = i
-            ),
-            image_extent = vk.Extent3D(m.width, m.height, 1),
-            buffer_offset = m.offset
-        )
+    for layer_count, texture_name in enumerate(('color', 'roughness', 'normal')):
+        texture_to_copy = textures[texture_name]
 
-        regions.append(region)
+        for i, m in enumerate(texture_to_copy.mipmaps):
+            region = hvk.buffer_image_copy(
+                image_subresource = hvk.image_subresource_layers(
+                    mip_level = i,
+                    base_array_layer = layer_count
+                ),
+                image_extent = vk.Extent3D(m.width, m.height, 1),
+                buffer_offset = offset + m.offset
+            )
+
+            regions.append(region)
+
+        offset += len(texture_to_copy.data)
 
     # Build the image barrier for the image layout transitions
     barrier = hvk.image_memory_barrier(
@@ -547,7 +582,8 @@ def texture_to_device():
         new_layout = 0,
         dst_access_mask = 0,
         subresource_range = hvk.image_subresource_range(
-            level_count = len(texture.mipmaps)
+            level_count = len(texture.mipmaps),
+            layer_count = textures_count
         )
     )
 
@@ -583,8 +619,10 @@ def texture_to_device():
     texture_view = hvk.create_image_view(api, device, hvk.image_view_create_info(
         image = texture_image,
         format = texture.format,
+        view_type = vk.IMAGE_VIEW_TYPE_2D_ARRAY,
         subresource_range = hvk.image_subresource_range(
-            level_count = len(texture.mipmaps)
+            level_count = len(texture.mipmaps),
+            layer_count = textures_count
         )
     ))
 
@@ -687,8 +725,8 @@ def create_shaders():
 
     shader_modules, stage_infos = [], []
     shader_sources = {
-        vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/textured_cube/textured_cube.vert.spv',
-        vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/textured_cube/textured_cube.frag.spv'
+        vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/corset/corset.vert.spv',
+        vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/corset/corset.frag.spv'
     }
     for stage, src in shader_sources.items():
         with open(src, 'rb') as f:
@@ -737,7 +775,7 @@ def create_descriptor_sets():
     global ubo_data_type, light_data_type, uniforms_data_type
 
     # Setup descriptor set resources
-    ubo_data_type = Mat4*3
+    ubo_data_type = Mat4*4
     light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*3), ('color', c_float*4))})
     uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (('ubo', ubo_data_type), ('light', light_data_type))})
     uniforms_data_size = sizeof(uniforms_data_type)
@@ -833,13 +871,17 @@ def update_ubo():
 
     # Perspective
     width, height = window.dimensions()
-    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)  
+    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.001, 256.0)  
     
     # View
-    ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)    
+    ubo_data[1] = Mat4.from_translation(0.0, 0.03, -zoom)    
 
     # Model
-    ubo_data[2] = Mat4.from_rotation(rotation, (0.0, -1.0, 0.5))
+    model_rot = Mat4.from_rotation(radians(170), (1.0, 0.00, 0.0))
+    ubo_data[2] = model_rot.rotate(-rotation, (0.0, 1.0, 0.0))
+
+    # Normal
+    ubo_data[3] = Mat4()
 
     # Light stuff
     light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
@@ -874,6 +916,11 @@ def setup_vertex_input_binding():
         stride = hvk.utils.format_size(vk.FORMAT_R32G32_SFLOAT)
     )
 
+    tangent_binding = hvk.vertex_input_binding_description(
+        binding = 3,
+        stride = hvk.utils.format_size(vk.FORMAT_R32G32B32A32_SFLOAT)
+    )
+
     position_attribute = hvk.vertex_input_attribute_description(
         location = 0,
         binding = 0,
@@ -895,8 +942,15 @@ def setup_vertex_input_binding():
         offset = 0
     )
 
-    vertex_bindings = (position_binding, normals_binding, uvs_binding)
-    vertex_attributes = (position_attribute, normals_attribute, uvs_attribute)
+    tangent_attribute = hvk.vertex_input_attribute_description(
+        location = 3,
+        binding = 3,
+        format = vk.FORMAT_R32G32B32A32_SFLOAT,
+        offset = 0
+    )
+
+    vertex_bindings = (position_binding, normals_binding, uvs_binding, tangent_binding)
+    vertex_attributes = (position_attribute, normals_attribute, uvs_attribute, tangent_attribute)
 
 
 def create_pipeline(recreate=False):
@@ -996,8 +1050,8 @@ def record_render_commands():
 
         hvk.bind_index_buffer(api, cmd, mesh_buffer, mesh_indices['offset'], vk.INDEX_TYPE_UINT16)
         hvk.bind_vertex_buffers(api, cmd, 
-            (mesh_buffer, mesh_buffer, mesh_buffer),
-            (mesh_positions['offset'], mesh_normals['offset'], mesh_uvs['offset'])
+            (mesh_buffer, mesh_buffer, mesh_buffer, mesh_buffer),
+            (mesh_positions['offset'], mesh_normals['offset'], mesh_uvs['offset'], mesh_tangent['offset'])
         )
 
         hvk.draw_indexed(api, cmd, mesh_indices['count'])
