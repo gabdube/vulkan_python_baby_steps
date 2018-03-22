@@ -90,7 +90,7 @@ render_fences = None
 zoom = 4.0
 rotation = [radians(180), radians(180), 0]
 
-reverse_light_direction = (0.5, -0.7, 1.0)
+reverse_light_direction = [0.5, -0.7, 1.0]
 light_color = (1.0, 1.0, 1.0, 1.0)
 
 # Game logic setup
@@ -545,8 +545,8 @@ def create_shaders():
 
     shader_modules, stage_infos = [], []
     shader_sources = {
-        vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/shaded_cube/shaded_cube.vert.spv',
-        vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/shaded_cube/shaded_cube.frag.spv'
+        vk.SHADER_STAGE_VERTEX_BIT: 'resources/shaders/phong_suzanne/phong_suzanne.vert.spv',
+        vk.SHADER_STAGE_FRAGMENT_BIT: 'resources/shaders/phong_suzanne/phong_suzanne.frag.spv'
     }
     for stage, src in shader_sources.items():
         with open(src, 'rb') as f:
@@ -969,21 +969,28 @@ while not window.must_exit:
             update_ubo()
             
         elif event is e.MouseClick:
-          mouse_press_state[event_data.button] = event_data.state
+            mouse_press_state[event_data.button] = event_data.state
 
         elif event is e.MouseMove:
-          x, y = event_data
+            x, y = event_data
 
-          if mouse_press_state[MouseButtons.Left] == ClickState.Down:
-            _x, _y = mouse_position
-            rotation[0] += (_y - y) * 0.007
-            rotation[1] += (_x - x) * 0.007
+            if mouse_press_state[MouseButtons.Left] == ClickState.Down:
+                _x, _y = mouse_position
+                rotation[0] += (_y - y) * 0.007
+                rotation[1] += (_x - x) * 0.007
+                update_ubo()
 
-          mouse_position = (x, y)
-          update_ubo()
+            elif mouse_press_state[MouseButtons.Right] == ClickState.Down:
+                _x, _y = mouse_position
+                reverse_light_direction[1] += (_y - y) * -0.01
+                reverse_light_direction[0] += (_x - x) * -0.01
+                update_ubo()
+                
+            mouse_position = (x, y)
 
         elif event is e.RenderEnable:
             render_ok = True
+
         elif event is e.RenderDisable:
             render_ok = False
 

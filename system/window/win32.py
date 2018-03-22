@@ -34,14 +34,17 @@ WM_QUIT = 0x0012
 WM_MOUSEWHEEL = 0x020A
 WM_RBUTTONDOWN = 0x0204
 WM_LBUTTONDOWN = 0x0201
+WM_MBUTTONDOWN = 0x0207
 WM_RBUTTONUP = 0x0205
 WM_LBUTTONUP = 0x0202
+WM_MBUTTONUP = 0x0208
 WM_MOUSEMOVE = 0x0200
 WM_SIZE = 0x0005
 WM_EXITSIZEMOVE = 0x0232
 
 MK_RBUTTON = 0x0002
 MK_LBUTTON = 0x0001
+MK_MBUTTON = 0x0010
 
 WS_CLIPCHILDREN = 0x02000000
 WS_CLIPSIBLINGS = 0x04000000
@@ -269,7 +272,24 @@ class Win32Window(object):
         :param l: System message parameter
         """
 
-        if msg == WM_EXITSIZEMOVE:
+        def handle_btn(msg, down, btn):
+            state = e.MouseClickState.Down if msg == down else e.MouseClickState.Up
+            self.events[e.MouseClick] = e.MouseClickData(state = state, button = btn)
+
+        if msg == WM_MOUSEMOVE:
+            x, y = float(c_short(l).value), float(c_short(l>>16).value)
+            self.events[e.MouseMove] = e.MouseMoveData(x, y)
+
+        elif msg in (WM_RBUTTONDOWN, WM_RBUTTONUP):
+            handle_btn(msg, WM_RBUTTONDOWN, e.MouseClickButton.Right)
+
+        elif msg in (WM_LBUTTONDOWN, WM_LBUTTONUP):
+            handle_btn(msg, WM_LBUTTONDOWN, e.MouseClickButton.Left)
+
+        elif msg in (WM_MBUTTONDOWN, WM_MBUTTONUP):
+            handle_btn(msg, WM_MBUTTONDOWN, e.MouseClickButton.Middle)
+
+        elif msg == WM_EXITSIZEMOVE:
             cwidth, cheight = self.cached_window_size
             width, height = self.dimensions(False)
             if width != cwidth or height != cheight:
