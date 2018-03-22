@@ -578,7 +578,7 @@ def create_descriptor_sets():
 
     # Setup descriptor set resources
     ubo_data_type = Mat4*3
-    light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*3), ('color', c_float*4))})
+    light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*4), ('color', c_float*4))})
     uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (('ubo', ubo_data_type), ('light', light_data_type))})
     uniforms_data_size = sizeof(uniforms_data_type)
 

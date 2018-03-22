@@ -11,6 +11,14 @@ layout (binding = 1) uniform LIGHT
     vec4 color;
 } light;
 
+layout (binding = 2) uniform MATERIAL 
+{
+    vec4 ambient;
+    vec4 diffuse;
+    vec4 specular_shininess; // "rgb" contains specular / "a" contains shininess
+} mat;
+
+
 layout (location = 0) out vec4 outFragColor;
 
 void main() 

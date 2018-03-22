@@ -367,7 +367,12 @@ class XcbWindow(object):
         event = event_ptr.contents
         evt_id = event.response_type & 0x7f
 
-        if evt_id == XCB_CONFIGURE_NOTIFY:
+        if evt_id == XCB_MOTION_NOTIFY:
+            motion_event = cast(event_ptr, POINTER(xcb_motion_notify_event_t)).contents
+            x, y = float(motion_event.event_x), float(motion_event.event_y)
+            self.events[e.MouseMove] = e.MouseMoveData(x, y)
+
+        elif evt_id == XCB_CONFIGURE_NOTIFY:
             resize_event = cast(event_ptr, POINTER(xcb_configure_notify_event_t)).contents
             width, height = resize_event.width, resize_event.height
             c_width, c_height = self.cached_size
@@ -375,6 +380,31 @@ class XcbWindow(object):
                 self.cached_size = (width, height)
                 self.resizing = perf_counter()
                 self.events[e.RenderDisable] = None
+
+        elif evt_id == XCB_BUTTON_PRESS or evt_id == XCB_BUTTON_RELEASE:
+            press_event = cast(event_ptr, POINTER(xcb_button_press_event_t)).contents
+
+            mstate = e.MouseClickState
+            if evt_id == XCB_BUTTON_PRESS:
+                state = mstate.Down
+            elif evt_id == XCB_BUTTON_RELEASE:
+                state = mstate.Up
+
+            sys_button, mbtn = press_event.detail, e.MouseClickButton
+            if sys_button == XCB_BUTTON_INDEX_1:
+                button = mbtn.Left
+            elif sys_button == XCB_BUTTON_INDEX_3:
+                button = mbtn.Right
+            elif sys_button == XCB_BUTTON_INDEX_2:
+                button = mbtn.Middle
+            else:
+                # Unimplemented buttons / return
+                return
+
+            self.events[e.MouseClick] = e.MouseClickData(
+                state = state,
+                button = button
+            )
                 
         elif evt_id in (XCB_CLIENT_MESSAGE, XCB_DESTROY_NOTIFY):
             self.must_exit = True
