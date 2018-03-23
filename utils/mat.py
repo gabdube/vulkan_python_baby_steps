@@ -146,3 +146,64 @@ class Mat4(Structure):
         self.data[::] = buffer_type(*chain(*staging))
         
         return self
+
+    def invert(self):
+        data = self.data
+        a00, a01, a02, a03 = data[0:4]
+        a10, a11, a12, a13 = data[4:8]
+        a20, a21, a22, a23 = data[8:12]
+        a30, a31, a32, a33 = data[12:16]
+
+        b00, b01, b02 = (a00 * a11 - a01 * a10), (a00 * a12 - a02 * a10), (a00 * a13 - a03 * a10)
+        b03, b04, b05 = (a01 * a12 - a02 * a11), (a01 * a13 - a03 * a11), (a02 * a13 - a03 * a12)
+        b06, b07, b08 = (a20 * a31 - a21 * a30), (a20 * a32 - a22 * a30), (a20 * a33 - a23 * a30)
+        b09, b10, b11 = (a21 * a32 - a22 * a31), (a21 * a33 - a23 * a31), (a22 * a33 - a23 * a32)
+
+        det = b00 * b11 - b01 * b10 + b02 * b09 + b03 * b08 - b04 * b07 + b05 * b06
+        if not det:
+            raise ValueError
+
+        det = 1.0 / det
+
+        staging = (
+            (
+                (a11 * b11 - a12 * b10 + a13 * b09) * det,
+                (a02 * b10 - a01 * b11 - a03 * b09) * det,
+                (a31 * b05 - a32 * b04 + a33 * b03) * det,
+                (a22 * b04 - a21 * b05 - a23 * b03) * det
+            ),
+            (
+                (a12 * b08 - a10 * b11 - a13 * b07) * det,
+                (a00 * b11 - a02 * b08 + a03 * b07) * det,
+                (a32 * b02 - a30 * b05 - a33 * b01) * det,
+                (a20 * b05 - a22 * b02 + a23 * b01) * det
+            ),
+            (
+                (a10 * b10 - a11 * b08 + a13 * b06) * det,
+                (a01 * b08 - a00 * b10 - a03 * b06) * det,
+                (a30 * b04 - a31 * b02 + a33 * b00) * det,
+                (a21 * b02 - a20 * b04 - a23 * b00) * det
+            ),
+            (
+                (a11 * b07 - a10 * b09 - a12 * b06) * det,
+                (a00 * b09 - a01 * b07 + a02 * b06) * det,
+                (a31 * b01 - a30 * b03 - a32 * b00) * det,
+                (a20 * b03 - a21 * b01 + a22 * b00) * det
+            )
+        )
+
+        self.data[::] = buffer_type(*chain(*staging))
+        
+        return self
+
+    def transpose(self):
+        d = self.data
+        a01, a02, a03 = d[0:3]
+        a12, a13 = d[6:8]
+        a23 = d[11]
+
+        d[1:5] = d[4], d[8], d[12], a01
+        d[6:10] = d[9], d[13], a02, a12
+        d[11:15] = d[14], a03, a13, a23
+    
+        return self

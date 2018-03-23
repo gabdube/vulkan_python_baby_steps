@@ -19,7 +19,7 @@ from enum import IntFlag
 from collections import namedtuple
 from ctypes import c_ubyte, c_float, sizeof, memmove, byref, Structure
 from math import radians
-import json
+import json, gc
 
 # Global data
 window = None
@@ -73,6 +73,7 @@ uniforms_mem = None
 uniforms_data_type = None
 ubo_data_type = None
 light_data_type = None
+mat_data_type = None
 pipeline_layout = None
 
 vertex_bindings = None
@@ -90,8 +91,12 @@ render_fences = None
 zoom = 4.0
 rotation = [radians(180), radians(180), 0]
 
-reverse_light_direction = [0.5, -0.7, 1.0]
-light_color = (1.0, 1.0, 1.0, 1.0)
+material_index = 0
+materials = (
+    {'color': (1.0, 0.5, 0.0)},
+)
+
+reverse_light_direction = [1.5, -0.7, 1.5]
 
 # Game logic setup
 MouseButtons, ClickState = e.MouseClickButton, e.MouseClickState
@@ -578,25 +583,47 @@ def create_descriptor_set_layout():
         stage_flags = vk.SHADER_STAGE_FRAGMENT_BIT
     )
 
+    mat_binding = hvk.descriptor_set_layout_binding(
+        binding = 2,
+        descriptor_type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        descriptor_count = 1,
+        stage_flags = vk.SHADER_STAGE_FRAGMENT_BIT
+    )
+
     # Setup shader descriptor set 
-    info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding, light_binding))
+    info = hvk.descriptor_set_layout_create_info(bindings = (ubo_binding, light_binding, mat_binding))
     descriptor_set_layout = hvk.create_descriptor_set_layout(api, device, info)
 
 
 def create_descriptor_sets():
     global descriptor_pool, descriptor_set, uniforms_buffer, uniforms_mem
-    global ubo_data_type, light_data_type, uniforms_data_type
+    global ubo_data_type, light_data_type, mat_data_type, uniforms_data_type
 
     # Setup descriptor set resources
-    ubo_data_type = Mat4*3
-    light_data_type = type("Light", (Structure,), {'_fields_': (('reverseLightDirection', c_float*4), ('color', c_float*4))})
-    uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (('ubo', ubo_data_type), ('light', light_data_type))})
+    ubo_data_type = Mat4*4
+
+    light_data_type = type("Light", (Structure,), {'_fields_': (
+        ('reverseLightDirection', c_float*4),
+    )})
+    
+    mat_data_type = type("Material", (Structure,), {'_fields_': (
+        ('color', c_float*4),
+        ('specular', c_float*3),
+        ('shininess', c_float)
+    )})
+
+    uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (
+        ('ubo', ubo_data_type),
+        ('light', light_data_type),
+        ('mat', mat_data_type),
+    )})
+    
     uniforms_data_size = sizeof(uniforms_data_type)
 
     # Create descriptor pool
     pool_size = vk.DescriptorPoolSize(
         type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
-        descriptor_count = 2
+        descriptor_count = 3
     )
 
     descriptor_pool = hvk.create_descriptor_pool(api, device, hvk.descriptor_pool_create_info(
@@ -640,6 +667,12 @@ def write_descriptor_sets():
         range = sizeof(light_data_type)
     )
 
+    mat_buffer_info = vk.DescriptorBufferInfo(
+        buffer = uniforms_buffer,
+        offset = light_buffer_info.offset + light_buffer_info.range,
+        range = sizeof(mat_data_type)
+    )
+
     write_set_ubo = hvk.write_descriptor_set(
         dst_set = descriptor_set,
         dst_binding = 0,
@@ -654,7 +687,14 @@ def write_descriptor_sets():
         buffer_info = (light_buffer_info,)
     )
 
-    hvk.update_descriptor_sets(api, device, (write_set_ubo, write_set_light), ())
+    write_set_mat = hvk.write_descriptor_set(
+        dst_set = descriptor_set,
+        dst_binding = 2,
+        descriptor_type = vk.DESCRIPTOR_TYPE_UNIFORM_BUFFER,
+        buffer_info = (mat_buffer_info,)
+    )
+
+    hvk.update_descriptor_sets(api, device, (write_set_ubo, write_set_light, write_set_mat), ())
 
 
 def update_ubo():
@@ -662,7 +702,7 @@ def update_ubo():
     data_ptr = hvk.map_memory(api, device, uniforms_mem, 0, sizeof(uniforms_data_type))
 
     uniforms = uniforms_data_type.from_address(data_ptr.value)
-    ubo_data, light = uniforms.ubo, uniforms.light
+    ubo_data, light, mat = uniforms.ubo, uniforms.light, uniforms.mat
 
     # Perspective
     width, height = window.dimensions()
@@ -674,11 +714,18 @@ def update_ubo():
     # Model
     rot = Mat4.from_rotation(rotation[0], (1.0, 0.0, 0))
     rot.rotate(rotation[1], (0.0, 1.0, 0.0))
-    ubo_data[2] = rot.rotate(rotation[2], (0.0, 0.0, 1.0))
+    model = rot.rotate(rotation[2], (0.0, 0.0, 1.0))
+    ubo_data[2] = model
+
+    # Normal
+    ubo_data[3] = model.invert().transpose()
 
     # Light stuff
-    light.color[::] = light_color
     light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
+
+    # Material stuff
+    material = materials[material_index]
+    mat.color = material['color']
 
     hvk.unmap_memory(api, device, uniforms_mem)
 
@@ -948,7 +995,7 @@ record_render_commands()
 window.show()
 
 # Render loop
-render_ok = True
+render_ok, counter = True, 0
 while not window.must_exit:
     window.translate_system_events()
 
@@ -998,5 +1045,12 @@ while not window.must_exit:
         render()
 
     time.sleep(1/120)
+
+    # Force the python to collect its garbage every 5 sec
+    # otherwise, I have found that the memory consumption slowly increase
+    # as the time goes on
+    counter += 1
+    if counter % (120*5) == 0:
+        gc.collect()
 
 clean_resources()

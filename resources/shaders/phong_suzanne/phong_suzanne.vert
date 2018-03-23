@@ -11,6 +11,7 @@ layout (binding = 0) uniform UBO
     mat4 proj;
     mat4 view;
     mat4 model;
+    mat4 normal;
 } ubo;
 
 layout (location = 0) out vec3 outNorm;
@@ -18,5 +19,5 @@ layout (location = 0) out vec3 outNorm;
 void main() 
 {
     gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPos.xyz, 1.0);
-    outNorm = mat3(ubo.model) * inNorm;
+    outNorm =  mat3(ubo.normal) * inNorm;
 }
