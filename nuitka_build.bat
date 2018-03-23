@@ -1,0 +1,7 @@
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console colored_triangle_attribute.py --python-flag=no_site
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console colored_triangle_uniform.py --python-flag=no_site
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console compute_noise.py --python-flag=no_site
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console phong_suzanne.py --python-flag=no_site
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console shaded_cube.py --python-flag=no_site
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console simple_triangle.py --python-flag=no_site
+D:\python36_64\Scripts\nuitka.bat --standalone --output-dir=build --msvc=14.0 --recurse-all --recurse-stdlib --windows-disable-console textured_cube.py --python-flag=no_site

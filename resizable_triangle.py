@@ -115,8 +115,15 @@ def create_window():
 def create_instance():
     global api, instance
 
-    # Extensions & Layers
-    layers = ("VK_LAYER_LUNARG_core_validation", "VK_LAYER_LUNARG_standard_validation")
+    # Layers
+    # Check if debugging layers are present
+    layer_names = [l[0] for l in hvk.enumerate_layers()]
+    if "VK_LAYER_LUNARG_core_validation" in layer_names and "VK_LAYER_LUNARG_standard_validation" in layer_names:
+        layers = ("VK_LAYER_LUNARG_core_validation", "VK_LAYER_LUNARG_standard_validation")
+    else:
+        layers = ()
+
+    # Extensions
     extensions = ["VK_KHR_surface", "VK_EXT_debug_report"]
 
     system_name = platform.system()
