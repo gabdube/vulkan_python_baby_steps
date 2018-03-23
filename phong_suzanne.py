@@ -21,6 +21,9 @@ from ctypes import c_ubyte, c_float, sizeof, memmove, byref, Structure
 from math import radians
 import json, gc
 
+MouseButtons, ClickState, Keys = e.MouseClickButton, e.MouseClickState, e.Keys
+
+
 # Global data
 window = None
 
@@ -93,14 +96,20 @@ rotation = [radians(180), radians(180), 0]
 
 material_index = 0
 materials = (
-    {'color': (1.0, 0.5, 0.0)},
+    {'color': (0.1, 0.8, 0.0), 'strength': 0.8, 'shininess': 64},
+    {'color': (0.85, 0.25, 0.0), 'strength': 0.8, 'shininess': 1},
+    {'color': (0.2, 0.2, 0.7), 'strength': 0.5, 'shininess': 32},
+    {'color': (0.05, 0.05, 0.16), 'strength': 4, 'shininess': 128},
+    {'color': (1.00, 1.00, 1.00), 'strength': 0.3, 'shininess': 8},
 )
 
-reverse_light_direction = [1.5, -0.7, 1.5]
+light_color = (1.0, 1.0, 1.0)
+light_ambient = 0.1
+light_direction = [-1.0, -0.7, 1.5]
+view = [0.5, 0, 4]
+
 
 # Game logic setup
-MouseButtons, ClickState = e.MouseClickButton, e.MouseClickState
-
 mouse_position = (0, 0)
 mouse_press_state = {
   MouseButtons.Left: False,
@@ -603,13 +612,16 @@ def create_descriptor_sets():
     ubo_data_type = Mat4*4
 
     light_data_type = type("Light", (Structure,), {'_fields_': (
-        ('reverseLightDirection', c_float*4),
+        ('pos', c_float*4),
+        ('color', c_float*3),
+        ('ambient', c_float),
+        ('viewPos', c_float*4),
     )})
     
     mat_data_type = type("Material", (Structure,), {'_fields_': (
         ('color', c_float*4),
-        ('specular', c_float*3),
-        ('shininess', c_float)
+        ('strenght', c_float),
+        ('shininess', c_float),
     )})
 
     uniforms_data_type = type("Uniforms", (Structure,), {'_fields_': (
@@ -704,28 +716,27 @@ def update_ubo():
     uniforms = uniforms_data_type.from_address(data_ptr.value)
     ubo_data, light, mat = uniforms.ubo, uniforms.light, uniforms.mat
 
-    # Perspective
+    # UBO
     width, height = window.dimensions()
-    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)  
-    
-    # View
-    ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)    
-
-    # Model
-    rot = Mat4.from_rotation(rotation[0], (1.0, 0.0, 0))
-    rot.rotate(rotation[1], (0.0, 1.0, 0.0))
-    model = rot.rotate(rotation[2], (0.0, 0.0, 1.0))
-    ubo_data[2] = model
-
-    # Normal
-    ubo_data[3] = model.invert().transpose()
+    ubo_data[0] = Mat4.perspective(radians(60), width/height, 0.1, 256.0)    # Perspective
+    ubo_data[1] = Mat4.from_translation(0.0, 0.0, -zoom)                     # View
+    model = Mat4.from_rotation(rotation[0], (1.0, 0.0, 0))\
+                      .rotate(rotation[1], (0.0, 1.0, 0.0))\
+                      .rotate(rotation[2], (0.0, 0.0, 1.0))
+    ubo_data[2] = model                                                      # Model
+    ubo_data[3] = model.invert().transpose()                                 # Normal
 
     # Light stuff
-    light.reverseLightDirection[:3] = Vec3.normalize(reverse_light_direction)
+    light.viewPos[:3] = view
+    light.pos[:3] = light_direction
+    light.color = light_color
+    light.ambient = light_ambient
 
     # Material stuff
     material = materials[material_index]
     mat.color = material['color']
+    mat.strenght = material['strength']
+    mat.shininess = material['shininess']
 
     hvk.unmap_memory(api, device, uniforms_mem)
 
@@ -1029,11 +1040,24 @@ while not window.must_exit:
 
             elif mouse_press_state[MouseButtons.Right] == ClickState.Down:
                 _x, _y = mouse_position
-                reverse_light_direction[1] += (_y - y) * -0.01
-                reverse_light_direction[0] += (_x - x) * -0.01
+                light_direction[1] += (_y - y) * -0.01
+                light_direction[0] += (_x - x) * -0.01
                 update_ubo()
                 
             mouse_position = (x, y)
+
+        elif event is e.KeyPress:
+            if event_data.key == Keys.Left:
+                material_index -= 1
+                if material_index < 0:
+                    material_index = len(materials) -1
+
+            elif event_data.key == Keys.Right:
+                material_index += 1
+                if material_index >= len(materials):
+                    material_index = 0
+
+            update_ubo()
 
         elif event is e.RenderEnable:
             render_ok = True

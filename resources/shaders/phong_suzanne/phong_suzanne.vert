@@ -6,6 +6,9 @@
 layout (location = 0) in vec3 inPos;
 layout (location = 1) in vec3 inNorm;
 
+layout (location = 0) out vec3 outFragPos;
+layout (location = 1) out vec3 outNorm;
+
 layout (binding = 0) uniform UBO 
 {
     mat4 proj;
@@ -14,10 +17,11 @@ layout (binding = 0) uniform UBO
     mat4 normal;
 } ubo;
 
-layout (location = 0) out vec3 outNorm;
 
 void main() 
 {
-    gl_Position = ubo.proj * ubo.view * ubo.model * vec4(inPos.xyz, 1.0);
-    outNorm =  mat3(ubo.normal) * inNorm;
+    outFragPos = vec3(ubo.model * vec4(inPos, 1.0));
+    outNorm = mat3(ubo.normal) * inNorm;
+
+    gl_Position = ubo.proj * ubo.view * vec4(outFragPos, 1.0);
 }

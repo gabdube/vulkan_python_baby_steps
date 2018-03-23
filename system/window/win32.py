@@ -41,10 +41,24 @@ WM_MBUTTONUP = 0x0208
 WM_MOUSEMOVE = 0x0200
 WM_SIZE = 0x0005
 WM_EXITSIZEMOVE = 0x0232
+WM_KEYPRESS = 0x0100
 
 MK_RBUTTON = 0x0002
 MK_LBUTTON = 0x0001
 MK_MBUTTON = 0x0010
+
+VK_LEFT = 0x25
+VK_UP = 0x26
+VK_RIGHT = 0x27
+VK_DOWN = 0x28
+
+k = e.Keys
+key_map = {
+    VK_LEFT: k.Left,
+    VK_UP: k.Up,
+    VK_RIGHT: k.Right,
+    VK_DOWN: k.Down
+}
 
 WS_CLIPCHILDREN = 0x02000000
 WS_CLIPSIBLINGS = 0x04000000
@@ -289,6 +303,11 @@ class Win32Window(object):
         elif msg in (WM_MBUTTONDOWN, WM_MBUTTONUP):
             handle_btn(msg, WM_MBUTTONDOWN, e.MouseClickButton.Middle)
 
+        elif msg == WM_KEYPRESS:
+            self.events[e.KeyPress] = e.KeyPressData(
+                key = key_map.get(w)
+            )
+
         elif msg == WM_EXITSIZEMOVE:
             cwidth, cheight = self.cached_window_size
             width, height = self.dimensions(False)
@@ -328,4 +347,3 @@ class Win32Window(object):
         delta_height = height - dim.bottom
 
         SetWindowPos(handle, None, 0, 0, width + delta_width, height + delta_height, SWP_NOMOVE | SWP_NOZORDER)
-

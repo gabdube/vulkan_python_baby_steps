@@ -18,7 +18,7 @@ class EventsMap(dict):
             raise KeyError(f"Invalid event type: {key}")
 
 
-Events = Enum("Events", "WindowResized RenderEnable RenderDisable MouseClick MouseMove")
+Events = Enum("Events", "WindowResized RenderEnable RenderDisable MouseClick MouseMove KeyPress")
 
 WindowResized = Events.WindowResized
 WindowResizedData = namedtuple('WindowResizedData', 'width height')
@@ -29,8 +29,11 @@ RenderDisable = Events.RenderDisable
 MouseClick = Events.MouseClick
 MouseClickState = Enum("MouseButtonState", "Down Up")
 MouseClickButton = Enum("MouseClickButton", "Left Right Middle")
-MouseClickData = namedtuple("MouseClickData", 'state button')
+MouseClickData = namedtuple("MouseClickData", "state button")
 
 MouseMove = Events.MouseMove
-MouseMoveData = namedtuple("MouseMoveData", 'x y')
-MouseMoveData.__add__ = lambda s, o: MouseMoveData(x = s.x + o.x, y = s.y + o.y)
+MouseMoveData = namedtuple("MouseMoveData", "x y")
+
+KeyPress = Events.KeyPress
+KeyPressData = namedtuple("KeyPressData", "key")
+Keys = Enum("Keys", "Left Up Right Down")
