@@ -58,7 +58,7 @@ class xcb_motion_notify_event_t(Structure):
         ('pad0', c_ubyte)
     )
 
-xcb_button_press_event_t = xcb_motion_notify_event_t
+xcb_key_press_event_t = xcb_button_press_event_t = xcb_motion_notify_event_t
 
 class xcb_configure_notify_event_t(Structure):
     _fields_ = (
@@ -126,6 +126,7 @@ NULL_STR = cast(NULL, POINTER(c_char))
 XCB_CW_BACK_PIXEL = 2
 XCB_CW_EVENT_MASK = 2048
 
+XCB_EVENT_MASK_KEY_PRESS = 1
 XCB_EVENT_MASK_KEY_RELEASE = 2
 XCB_EVENT_MASK_EXPOSURE = 32768
 XCB_EVENT_MASK_STRUCTURE_NOTIFY = 131072
@@ -155,6 +156,14 @@ XCB_BUTTON_INDEX_3 = 3
 
 XCB_CONFIG_WINDOW_X = 1
 XCB_CONFIG_WINDOW_Y = 2
+
+k = e.Keys
+key_map = {
+    113: k.Left,
+    111: k.Up,
+    114: k.Right,
+    116: k.Down
+}
 
 # Functions
 
@@ -263,7 +272,7 @@ class XcbWindow(object):
         # Create the window
         events_masks = XCB_EVENT_MASK_BUTTON_RELEASE | XCB_EVENT_MASK_BUTTON_PRESS |\
                         XCB_EVENT_MASK_POINTER_MOTION | XCB_EVENT_MASK_STRUCTURE_NOTIFY |\
-                        XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_KEY_RELEASE
+                        XCB_EVENT_MASK_EXPOSURE | XCB_EVENT_MASK_KEY_RELEASE | XCB_EVENT_MASK_KEY_PRESS
 
         window = xcb_generate_id(connection)
         value_mask = XCB_CW_BACK_PIXEL | XCB_CW_EVENT_MASK
@@ -406,6 +415,12 @@ class XcbWindow(object):
                 button = button
             )
                 
+        elif evt_id == XCB_EVENT_MASK_KEY_RELEASE:
+            press_event = cast(event_ptr, POINTER(xcb_key_press_event_t)).contents
+            self.events[e.KeyPress] = e.KeyPressData(
+                key = key_map.get(press_event.detail)
+            )
+
         elif evt_id in (XCB_CLIENT_MESSAGE, XCB_DESTROY_NOTIFY):
             self.must_exit = True
 
