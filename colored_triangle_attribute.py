@@ -88,7 +88,7 @@ def find_memory_type(heap_flags, type_flags):
     heaps = props.memory_heaps[:props.memory_heap_count]
 
     # Find the memory heap that satisfy heap_flags
-    heap_indices = tuple(i for i, h in enumerate(heaps) if heap_flags in F(h.flags))
+    heap_indices = tuple(i for i, h in enumerate(heaps) if F(heap_flags) in F(h.flags))
     if heap_indices is None:
         return
 
@@ -159,7 +159,7 @@ def create_device():
 
     # Queues setup (A single graphic queue)
     queue_families = hvk.list_queue_families(api, physical_device)
-    render_queue_family = next(qf for qf in queue_families if vk.QUEUE_GRAPHICS_BIT in IntFlag(qf.properties.queue_flags))
+    render_queue_family = next(qf for qf in queue_families if IntFlag(vk.QUEUE_GRAPHICS_BIT) in IntFlag(qf.properties.queue_flags))
     render_queue_create_info = hvk.queue_create_info(
         queue_family_index = render_queue_family.index,
         queue_count = 1
@@ -225,7 +225,7 @@ def create_swapchain():
 
     # Default image transformation
     transform = caps.current_transform
-    if vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR in IntFlag(caps.supported_transforms):
+    if IntFlag(vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR) in IntFlag(caps.supported_transforms):
         transform = vk.SURFACE_TRANSFORM_IDENTITY_BIT_KHR
 
     # Swapchain creation
@@ -268,7 +268,7 @@ def setup_swapchain_depth_stencil():
     depth_formats = (vk.FORMAT_D32_SFLOAT_S8_UINT, vk.FORMAT_D24_UNORM_S8_UINT, vk.FORMAT_D16_UNORM_S8_UINT)
     for fmt in depth_formats:
         prop = hvk.physical_device_format_properties(api, physical_device, fmt)
-        if vk.FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT in IntFlag(prop.optimal_tiling_features):
+        if IntFlag(vk.FORMAT_FEATURE_DEPTH_STENCIL_ATTACHMENT_BIT) in IntFlag(prop.optimal_tiling_features):
             depth_format = fmt
             break
 
